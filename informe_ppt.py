@@ -17,7 +17,7 @@ UNA lectura. Los números completos viven en el tablero, que es donde se explora
     python3 informe_ppt.py
 """
 
-import os, sys, json
+import os, sys, json, collections
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -86,7 +86,7 @@ def _header(slide, cliente, proyecto, oscuro=True):
            align=PP_ALIGN.RIGHT)
 
 
-HERRAMIENTA = "Monitor de Categoría, herramienta propietaria de Ciudadana"
+HERRAMIENTA = "una herramienta propietaria de Ciudadana"
 
 
 def _nota(slide, texto, oscuro=True):
@@ -145,6 +145,93 @@ def slide_portada(prs, d):
     return s
 
 
+def slide_metodologia(prs, cliente, proyecto, d, cfg, rep=None):
+    """Slide 2: la metodología, antes de cualquier número.
+
+    Va al INICIO a propósito. Quien lee el informe tiene que saber, antes de ver un dato,
+    qué se midió, qué NO se pudo medir, y cómo se clasificó. Si esto va al final (o no va),
+    los números se leen como verdad absoluta y no lo son.
+    """
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    _fondo(s, NEGRO)
+    _header(s, cliente, proyecto)
+    _etiqueta(s, "Metodología")
+    _texto(s, Inches(0.9), Inches(1.05), Inches(11.5), Inches(0.6),
+           "CÓMO SE HIZO ESTE INFORME", 26, BLANCO, bold=True)
+
+    m, v = d["meta"], d["meta"]["ventana"]
+    activas = [b for b in d["brands"] if b["posts"] > 0]
+    sin_cuenta = [b["n"] for b in d["brands"] if b["posts"] == 0]
+
+    # Qué redes se relevaron y con cuántas marcas cada una
+    redes = collections.Counter()
+    for b in d["brands"]:
+        for k, nom in (("ig", "Instagram"), ("fb", "Facebook"), ("x", "X / Twitter"),
+                       ("tt", "TikTok")):
+            if b.get("handles", {}).get(k):
+                redes[nom] += 1
+
+    COL1, COL2, COL3 = Inches(0.9), Inches(5.1), Inches(9.3)
+    ANCHO = Inches(3.7)
+
+    def bloque(x, y, titulo, lineas):
+        _texto(s, x, y, ANCHO, Inches(0.3), titulo.upper(), 10, LAVANDA, bold=True)
+        yy = y + Inches(0.38)
+        for l in lineas:
+            _texto(s, x, yy, ANCHO, Inches(0.3), l, 11.5, BLANCO if l.startswith("·") else GRIS)
+            yy = yy + Inches(0.28)
+        return yy
+
+    # ── Columna 1: el universo
+    bloque(COL1, Inches(1.85), "Qué se relevó",
+           ["· %s posteos públicos" % "{:,}".format(m["total_posts"]).replace(",", "."),
+            "· %d marcas con actividad" % m["marcas_activas"],
+            "· Ventana: %s a %s" % (v["desde"], v["hasta"]),
+            "· %d días (12 meses)" % v["dias"],
+            "",
+            "Redes analizadas:"] +
+           ["   %s — %d marcas" % (r, n) for r, n in redes.most_common()])
+
+    # ── Columna 2: quiénes, y quiénes no
+    marcas_txt = ["· " + b["n"] for b in sorted(activas, key=lambda b: -b["posts"])]
+    y2 = bloque(COL2, Inches(1.85), "Marcas analizadas", marcas_txt)
+    if sin_cuenta:
+        bloque(COL2, y2 + Inches(0.25), "Sin cuenta propia",
+               [n for n in sin_cuenta] +
+               ["", "No es un dato faltante:", "es un hallazgo."])
+
+    # ── Columna 3: cómo se clasificó
+    nlp = []
+    if m.get("comentarios"):
+        acuerdo = rep["acuerdo"]["pct"] if rep else None
+        nlp = [
+            "· %s comentarios del público" % "{:,}".format(m["comentarios"]).replace(",", "."),
+            "· Se excluyen los de sorteos",
+            "   (99% del total: son etiquetas",
+            "   a amigos, no opinión)",
+            "",
+            "Sentimiento — doble método:",
+            "   1. Léxico rioplatense propio",
+            "      (doble negación, jerga,",
+            "       ironía)",
+            "   2. Modelo de lenguaje",
+            "      (entiende contexto)",
+        ]
+        if acuerdo:
+            nlp += ["", "   Coinciden en el %d%%." % acuerdo,
+                    "   El resto se revisa a mano."]
+    else:
+        nlp = ["No se analizaron comentarios", "en esta corrida."]
+    bloque(COL3, Inches(1.85), "Cómo se leyó a la gente", nlp)
+
+    _nota(s, "Metodología · Los datos son públicos y se capturan por API. NO se miden alcance, impresiones ni "
+             "pauta paga: no son datos públicos y ninguna herramienta externa puede medirlos. "
+             "El sentimiento de comentarios públicos sobre-expresa la queja (el conforme no comenta) "
+             "y las marcas moderan: sirve para comparar marcas entre sí, no como termómetro de "
+             "satisfacción.")
+    return s
+
+
 def slide_seccion(prs, titulo, bajada):
     """Slide de impacto: fondo lavanda, texto negro."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
@@ -176,8 +263,14 @@ def slide_dato(prs, cliente, proyecto, etiqueta, numero, titular, enfasis, apoyo
     return s
 
 
-def slide_ranking(prs, cliente, proyecto, etiqueta, titulo, filas, nota=""):
-    """Ranking con barras. La marca protagonista en lavanda; el resto en gris."""
+def slide_ranking(prs, cliente, proyecto, etiqueta, titulo, filas, nota="", con_logo=True):
+    """Ranking con barras.
+
+    La columna de etiquetas se dimensiona SEGÚN EL TEXTO MÁS LARGO, y las barras empiezan
+    después. Antes la columna era fija y las etiquetas largas ("Crítica a la empresa
+    pública / al Estado") se metían dentro de la barra. Si aun con el ancho máximo no
+    entra, se achica la tipografía y, en último caso, se recorta con puntos suspensivos.
+    """
     from pptx.enum.shapes import MSO_SHAPE
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _fondo(s, NEGRO)
@@ -186,29 +279,60 @@ def slide_ranking(prs, cliente, proyecto, etiqueta, titulo, filas, nota=""):
     _texto(s, Inches(0.9), Inches(1.2), Inches(11.5), Inches(0.8),
            titulo.upper(), 26, BLANCO, bold=True)
 
+    # ¿Hay logos para estas filas? Solo si son marcas.
+    logos_ok = con_logo and any(logos.ruta(f["n"]) for f in filas)
+    x0 = Inches(0.9)
+    x_lab = Inches(1.45) if logos_ok else Inches(0.9)
+
+    # Ancho que necesita la etiqueta más larga, con la fuente que vamos a usar.
+    FS = 12
+    CHAR = 0.0072      # ancho medio de carácter, en pulgadas por punto de tamaño
+    largo = max(len(f["n"]) for f in filas)
+    necesario = Inches(largo * CHAR * FS)
+    MAX_LAB = Inches(4.6)          # más que esto y no queda barra visible
+
+    if necesario > MAX_LAB:
+        # Achicar la fuente antes que recortar el texto: se pierde menos información.
+        FS = max(9, int(FS * (MAX_LAB / necesario)))
+        necesario = Inches(largo * CHAR * FS)
+    lab_w = min(max(necesario + Inches(0.25), Inches(2.0)), MAX_LAB)
+
+    x_bar = x_lab + lab_w
+    # El valor va alineado a la derecha, terminando en el margen (12.4"). Antes arrancaba
+    # en 12.9" con 1.6" de ancho → terminaba en 14.5", fuera de la slide (13.33").
+    val_w = Inches(1.5)
+    x_val = Inches(12.4) - val_w
+    ancho_max = x_val - x_bar - Inches(0.35)
+
+    EMU_IN = 914400.0
+    def recortar(t):
+        # lab_w es EMU (un int), no un objeto Inches: hay que dividir a mano.
+        cabe = int((lab_w / EMU_IN) / (CHAR * FS))
+        return t if len(t) <= cabe else t[:max(cabe - 1, 3)].rstrip() + "…"
+
     y = Inches(2.4)
     alto, gap = Inches(0.34), Inches(0.16)
     maxv = max([f["v"] for f in filas] + [1])
-    ancho_max = Inches(6.6)
     for f in filas:
-        # El logo de la marca, si lo tenemos (viene de su foto de perfil, en círculo).
-        lg = logos.ruta(f["n"]) if f.get("logo", True) else None
+        lg = logos.ruta(f["n"]) if logos_ok else None
         if lg:
-            s.shapes.add_picture(lg, Inches(0.9), y - Inches(0.03), height=Inches(0.4))
-        _texto(s, Inches(1.45) if lg else Inches(0.9), y - Inches(0.06), Inches(2.3),
-               Inches(0.35), f["n"], 12, BLANCO if f.get("star") else GRIS,
-               bold=f.get("star", False), wrap=False)
+            s.shapes.add_picture(lg, x0, y - Inches(0.03), height=Inches(0.4))
+        _texto(s, x_lab, y - Inches(0.04), lab_w, Inches(0.35), recortar(f["n"]), FS,
+               BLANCO if f.get("star") else GRIS, bold=f.get("star", False), wrap=False)
+
         w = Emu(int(ancho_max * (f["v"] / maxv))) if f["v"] > 0 else Emu(1000)
-        bar = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(3.9), y, w, alto)
+        bar = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x_bar, y, w, alto)
         bar.fill.solid()
         bar.fill.fore_color.rgb = LAVANDA if f.get("star") else RGBColor(0x3A, 0x3A, 0x3A)
         bar.line.fill.background()
         bar.adjustments[0] = 0.25
         bar.text_frame.text = ""
-        _texto(s, Inches(10.7), y - Inches(0.06), Inches(2.3), Inches(0.35),
-               f["lab"], 12, BLANCO if f.get("star") else GRIS, bold=f.get("star", False),
-               wrap=False)
+
+        _texto(s, x_val, y - Inches(0.04), val_w, Inches(0.35), f["lab"], FS,
+               BLANCO if f.get("star") else GRIS, bold=f.get("star", False),
+               align=PP_ALIGN.RIGHT, wrap=False)
         y = y + alto + gap
+
     if nota:
         _nota(s, nota)
     return s
@@ -294,13 +418,18 @@ def build():
     global M_POSTEOS, M_SORTEO, M_COMENTARIOS, M_SENTIMIENTO, M_SENT_RANKING, \
            M_MOTIVOS, M_IRONIA, M_NUBE, M_TERRITORIOS
 
+    # Las redes se leen de los datos: si mañana se suma TikTok, la nota lo dice sola.
+    redes_usadas = sorted({r for b in d["brands"] for r in b.get("redes", {})})
+    redes_txt = ", ".join(redes_usadas[:-1]) + " y " + redes_usadas[-1] if len(redes_usadas) > 1 \
+        else (redes_usadas[0] if redes_usadas else "redes sociales")
+
     M_POSTEOS = (
-        "Metodología · Universo: %s posteos públicos de Instagram y Facebook de las %d marcas "
-        "relevadas, capturados por API entre el %s y el %s (12 meses). Engagement = suma de "
-        "likes, comentarios y compartidos de cada posteo. Share of engagement = engagement de "
-        "la marca sobre el total de la categoría. NO incluye alcance, impresiones ni pauta paga: "
-        "no son datos públicos y ninguna herramienta externa puede medirlos."
-        % (NF(m["total_posts"]), m["marcas_activas"], v["desde"], v["hasta"]))
+        "Metodología · Universo: %s posteos públicos de %s de las %d marcas relevadas, capturados "
+        "por API entre el %s y el %s (12 meses). Engagement = suma de likes, comentarios y "
+        "compartidos de cada posteo. Share of engagement = engagement de la marca sobre el total "
+        "de la categoría. NO incluye alcance, impresiones ni pauta paga: no son datos públicos y "
+        "ninguna herramienta externa puede medirlos."
+        % (NF(m["total_posts"]), redes_txt, m["marcas_activas"], v["desde"], v["hasta"]))
 
     M_SORTEO = (
         "Metodología · Se clasifica como sorteo todo posteo cuyo texto contiene términos de "
@@ -364,6 +493,12 @@ def build():
         "libre en la conversación de la categoría." % cliente)
 
     slide_portada(prs, d)
+
+    rep_meta = {}
+    _rp = os.path.join(HERE, "reporte_sentimiento.json")
+    if os.path.exists(_rp):
+        rep_meta = json.load(open(_rp, encoding="utf-8"))
+    slide_metodologia(prs, cliente, proyecto, d, cfg, rep_meta or None)
 
     # ── 1. Quién manda
     slide_seccion(prs, "Quién manda\nla conversación",

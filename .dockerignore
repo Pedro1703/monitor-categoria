@@ -1,0 +1,12 @@
+.env
+raw/
+*.pptx
+*.pdf
+monitor.json
+monitor.data.js
+nubes.json
+reporte_sentimiento.json
+brand/nubes/
+brand/marcas/
+__pycache__/
+.git/

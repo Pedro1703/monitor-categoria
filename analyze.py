@@ -227,8 +227,8 @@ def build(usar_ia):
         marcas.append({
             "n": nombre,
             "star": b.get("star", False),
-            "handles": {k: b.get(k) for k in ("ig", "fb", "tt") if b.get(k)},
-            "sin_cuenta": not any(b.get(k) for k in ("ig", "fb", "tt")),
+            "handles": {k: b.get(k) for k in ("ig", "fb", "x", "tt") if b.get(k)},
+            "sin_cuenta": not any(b.get(k) for k in ("ig", "fb", "x", "tt")),
             "seguidores": seguidores,
             "posts": len(suyos),
             "eng": eng,

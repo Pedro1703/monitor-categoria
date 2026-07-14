@@ -169,7 +169,10 @@ def _fecha(v):
         return datetime.fromtimestamp(v, timezone.utc).strftime("%Y-%m-%d")
     s = str(v)
     for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z",
-                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d",
+                # X/Twitter: "Wed Jan 05 14:08:00 +0000 2026". Si no se parsea, la fecha
+                # queda basura, el filtro de ventana no aplica y se bajan tweets de más.
+                "%a %b %d %H:%M:%S %z %Y"):
         try:
             return datetime.strptime(s.replace("+00:00", "Z") if fmt.endswith("Z") else s,
                                      fmt).strftime("%Y-%m-%d")
@@ -224,6 +227,26 @@ def norm_fb(it, por_handle):
     }
 
 
+def norm_x(it, por_handle):
+    """X/Twitter. El actor devuelve el autor anidado en 'author'."""
+    a = it.get("author") or {}
+    h = (a.get("userName") or a.get("username") or "").lower()
+    marca = por_handle.get(h)
+    if not marca:
+        return None
+    return {
+        "marca": marca, "red": "X", "id": it.get("id"),
+        "url": it.get("url") or it.get("twitterUrl") or "",
+        "fecha": _fecha(it.get("createdAt")),
+        "texto": it.get("text") or it.get("fullText") or "",
+        "hashtags": [str((h2 or {}).get("text", "")).lower()
+                     for h2 in ((it.get("entities") or {}).get("hashtags") or [])],
+        "likes": _num(it.get("likeCount")), "comments": _num(it.get("replyCount")),
+        "shares": _num(it.get("retweetCount")), "views": _num(it.get("viewCount")),
+        "tipo": "texto",
+    }
+
+
 def norm_tt(it, por_handle):
     h = ((it.get("authorMeta") or {}).get("name") or "").lower()
     marca = por_handle.get(h)
@@ -246,7 +269,7 @@ def norm_tt(it, por_handle):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dias", type=int, default=None, help="ventana en días (default: config)")
-    ap.add_argument("--redes", default="ig,fb,tt", help="redes a traer: ig,fb,tt")
+    ap.add_argument("--redes", default="ig,fb,x,tt", help="redes a traer: ig,fb,x,tt")
     args = ap.parse_args()
 
     if not APIFY_TOKEN:
@@ -311,6 +334,21 @@ def main():
                              len(items) / 1000 * costos.PRECIOS["fb_post"]["usd_1000"],
                              "%d marcas · %d días" % (len(fb_map), dias))
 
+    # ---- X / Twitter
+    if "x" in redes:
+        x_map = {b["x"].lower(): b["n"] for b in cfg["brands"] if b.get("x")}
+        if x_map:
+            items = run_actor(actors["x_posts"], {
+                "twitterHandles": list(x_map),
+                "maxItems": tope * len(x_map),
+                "start": desde,
+                "sort": "Latest",
+            }, "posteos X · %d marcas" % len(x_map))
+            posts += [p for p in (norm_x(i, x_map) for i in items) if p]
+            costos.registrar("x_post", len(items),
+                             len(items) / 1000 * costos.PRECIOS["x_post"]["usd_1000"],
+                             "%d marcas · %d días" % (len(x_map), dias))
+
     # ---- TikTok
     if "tt" in redes:
         tt_map = {b["tt"].lower(): b["n"] for b in cfg["brands"] if b.get("tt")}
@@ -328,9 +366,27 @@ def main():
     if antes != len(posts):
         print("\n(%d posteos descartados por caer fuera de la ventana)" % (antes - len(posts)))
 
-    with open(os.path.join(RAW_DIR, "posts.jsonl"), "w", encoding="utf-8") as f:
-        for p in posts:
+    # FUSIÓN, no sobrescritura. Bajar solo una red (--redes x) no puede borrar las que
+    # ya estaban capturadas: eso obliga a re-scrapear todo y a pagarlo de nuevo. Pasó.
+    ruta_posts = os.path.join(RAW_DIR, "posts.jsonl")
+    previos = []
+    if os.path.exists(ruta_posts):
+        previos = [json.loads(l) for l in open(ruta_posts, encoding="utf-8") if l.strip()]
+    redes_bajadas = {p["red"] for p in posts}
+    conservados = [p for p in previos if p["red"] not in redes_bajadas]
+    if conservados:
+        print("(se conservan %d posteos de %s, ya capturados)"
+              % (len(conservados), ", ".join(sorted({p["red"] for p in conservados}))))
+    todos = conservados + posts
+    with open(ruta_posts, "w", encoding="utf-8") as f:
+        for p in todos:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
+    ruta_perf = os.path.join(RAW_DIR, "profiles.json")
+    if os.path.exists(ruta_perf) and not perfiles:
+        try:
+            perfiles = json.load(open(ruta_perf, encoding="utf-8"))["perfiles"]
+        except Exception:
+            pass
     json.dump({"perfiles": perfiles,
                "ventana": {"desde": desde, "hasta": datetime.now().strftime("%Y-%m-%d"), "dias": dias},
                "capturado": datetime.now().isoformat(timespec="seconds")},

@@ -24,6 +24,12 @@ CLAVES = {
         "prefijo": "apify_api_",
         "requerida": True,
     },
+    "JAVIA_PASSWORD": {
+        "desc": "Contraseña de acceso a la herramienta",
+        "url": "",
+        "prefijo": "",
+        "requerida": False,
+    },
     "ANTHROPIC_API_KEY": {
         "desc": "API key de Claude (clasifica sentimiento y territorios)",
         "url": "https://console.anthropic.com/settings/keys",

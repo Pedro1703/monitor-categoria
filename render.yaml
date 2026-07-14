@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: javia
+    runtime: docker
+    plan: starter          # el free se duerme; starter mantiene la app viva
+    healthCheckPath: /login
+    envVars:
+      - key: JAVIA_PASSWORD
+        sync: false        # se carga a mano en el panel de Render
+      - key: JAVIA_SECRET
+        generateValue: true
+      - key: APIFY_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: JAVIA_TOPE_CORRIDA
+        value: "25"
+      - key: JAVIA_TOPE_MES
+        value: "100"
+    disk:
+      name: datos
+      mountPath: /app/raw   # el crudo sobrevive a los redeploys
+      sizeGB: 2

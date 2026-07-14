@@ -3,12 +3,13 @@
   "categoria": "Seguros · Uruguay",
   "ventana_dias": 365,
   "_nota_tiktok": "Búsqueda web (jul 2026): NINGUNA aseguradora uruguaya tiene cuenta oficial en TikTok. Lo que aparece bajo 'seguros Uruguay' en TikTok son corredores independientes y usuarios quejándose de siniestros — no las marcas. Es un océano libre real, no un dato faltante. El soporte de TikTok queda cableado en el pipeline: en cuanto alguna marca abra cuenta, se agrega el handle en 'tt' y se releva sin tocar código.",
-  "_nota_otras_redes": "X/Twitter, LinkedIn y YouTube quedan fuera de esta versión. X está muerta como canal de marca en la categoría; LinkedIn es comunicación corporativa (otro público, otra conversación); YouTube es el repositorio de los spots de TV, que ya se cubren por el análisis de campañas. Si se quiere sumar alguna, se agrega el actor en 'actors' y un normalizador en fetch_apify.py.",
+  "_nota_otras_redes": "LinkedIn y YouTube quedan fuera: LinkedIn es comunicación corporativa (otro público) y YouTube es el repositorio de los spots de TV. X/Twitter SÍ está soportado (actor apidojo~tweet-scraper), aunque en seguros Uruguay la actividad es marginal.",
   "actors": {
     "instagram_posts": "apify~instagram-scraper",
     "instagram_profile": "apify~instagram-profile-scraper",
     "facebook_posts": "apify~facebook-posts-scraper",
-    "tiktok_posts": "clockworks~tiktok-scraper"
+    "tiktok_posts": "clockworks~tiktok-scraper",
+    "x_posts": "apidojo~tweet-scraper"
   },
   "comentarios": {
     "_comment": "Control de la capa de comentarios. min_comentarios=1: en esta categoría hay tan poca conversación real (666 comentarios en 12 meses, fuera de sorteos) que conviene bajar TODO lo que no sea sorteo. 'motivos' es el enum cerrado del clasificador: es la parte accionable.",
@@ -45,63 +46,72 @@
       "star": true,
       "ig": "bseuruguay",
       "fb": "BSEuruguay",
-      "tt": null
+      "tt": null,
+      "x": "bseuruguay"
     },
     {
       "n": "Mapfre",
       "star": false,
       "ig": "mapfre.uy",
       "fb": "segurosmapfreuruguay",
-      "tt": null
+      "tt": null,
+      "x": "MAPFRE_UY"
     },
     {
       "n": "SURA",
       "star": false,
       "ig": "segurossurauy",
       "fb": "SegurosSURAUruguay",
-      "tt": null
+      "tt": null,
+      "x": "SegurosSURAuy"
     },
     {
       "n": "San Cristóbal",
       "star": false,
       "ig": "sancristobaluy",
       "fb": "sancristobaluy",
-      "tt": null
+      "tt": null,
+      "x": null
     },
     {
       "n": "Porto Seguro",
       "star": false,
       "ig": "portoseguro_uruguay",
       "fb": null,
-      "tt": null
+      "tt": null,
+      "x": "PortoSeguroUy"
     },
     {
       "n": "HDI",
       "star": false,
       "ig": null,
       "fb": null,
-      "tt": null
+      "tt": null,
+      "x": null
     },
     {
       "n": "MetLife",
       "star": false,
       "ig": "metlife_uruguay",
       "fb": "MetLifeUruguay",
-      "tt": null
+      "tt": null,
+      "x": null
     },
     {
       "n": "Surco",
       "star": false,
       "ig": "surcoseguros",
       "fb": null,
-      "tt": null
+      "tt": null,
+      "x": null
     },
     {
       "n": "Zurich Santander",
       "star": false,
       "ig": null,
       "fb": null,
-      "tt": null
+      "tt": null,
+      "x": null
     }
   ],
   "territorios": {
@@ -225,5 +235,6 @@
     "_comment": "Reglas para generar alertas automáticas en el dashboard.",
     "pico_engagement_x": 3.0,
     "caida_cadencia_pct": 40
-  }
+  },
+  "_nota_x": "X/Twitter verificado marca por marca (jul 2026): BSE, Mapfre, SURA y Porto Seguro tienen cuenta activa. San Cristóbal, MetLife, Surco y Zurich Santander NO tienen. Es la red más barata (US$0,40/1.000 tweets, verificado contra factura) y la de menor actividad."
 }
