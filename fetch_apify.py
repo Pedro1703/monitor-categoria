@@ -26,7 +26,7 @@ El crudo queda cacheado en raw/. Re-correr analyze.py sobre el crudo no cuesta n
 Dependencias: solo librería estándar de Python 3.
 """
 
-import os, sys, json, time, argparse, urllib.request, urllib.error
+import os, sys, json, ssl, time, argparse, urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,14 +37,64 @@ APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "").strip()
 API = "https://api.apify.com/v2"
 
 
+def _ssl_context():
+    """Contexto SSL con los certificados raíz de certifi si están disponibles.
+
+    El Python que se baja de python.org (típico en Mac) no usa el llavero del sistema:
+    trae su propio almacén de certificados y lo deja vacío hasta que corrés
+    'Install Certificates.command'. Si no, cualquier HTTPS revienta con
+    CERTIFICATE_VERIFY_FAILED. Apuntar explícitamente a certifi evita depender de eso.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+SSL_CTX = _ssl_context()
+
+
 # ---------------------------------------------------------------- Apify
 
 def _req(url, data=None, method=None):
     body = json.dumps(data).encode("utf-8") if data is not None else None
     headers = {"Content-Type": "application/json"} if body else {}
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=120, context=SSL_CTX) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+def chequear_conexion():
+    """Valida SSL + token contra Apify antes de gastar un peso.
+
+    Falla temprano y con un mensaje accionable, en vez de escupir un stack trace
+    a mitad de camino o —peor— arrancar actores que después no pueden leer nada.
+    Ojo: HTTPError hereda de URLError, así que va primero.
+    """
+    try:
+        r = _req("%s/users/me?token=%s" % (API, APIFY_TOKEN))
+        u = r.get("data", {})
+        plan = (u.get("plan") or {}).get("id") or "free"
+        print("Apify OK · usuario: %s · plan: %s" % (u.get("username", "?"), plan))
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            print("ERROR: Apify rechazó el token (HTTP %s). Revisá APIFY_TOKEN." % e.code,
+                  file=sys.stderr)
+        else:
+            print("ERROR: Apify respondió HTTP %s." % e.code, file=sys.stderr)
+        return False
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, ssl.SSLCertVerificationError):
+            print("ERROR: Python no puede verificar certificados HTTPS.\n"
+                  "  Es el clásico de Python bajado de python.org en Mac. Arreglalo con:\n"
+                  "      python3 -m pip install --upgrade certifi\n"
+                  "  (o corriendo 'Install Certificates.command' en tu carpeta de Python).",
+                  file=sys.stderr)
+        else:
+            print("ERROR: no hay conexión con Apify (%s)." % e.reason, file=sys.stderr)
+        return False
 
 
 def run_actor(actor, payload, etiqueta, timeout_min=20):
@@ -197,6 +247,8 @@ def main():
     if not APIFY_TOKEN:
         print("ERROR: falta APIFY_TOKEN.\n"
               "  export APIFY_TOKEN=apify_api_xxx && python3 fetch_apify.py", file=sys.stderr)
+        return 1
+    if not chequear_conexion():
         return 1
 
     cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
