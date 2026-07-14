@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor BSE · un año de actividad en redes</title>
+<style>
+  :root{
+    --bg:#0B0D0E; --surface:#121618; --surface-2:#171C1F; --line:#232B2F;
+    --aqua:#07F3D0; --aqua-dim:#07F3D033;
+    --ctx:#8AA2AE;                 /* contexto: competencia, deliberadamente acromático */
+    --ink:#F2F6F7; --ink-2:#A9B8BF; --ink-3:#6C7C84;
+    --pos:#3FD68A; --neg:#FF6B5E;
+    --grad:linear-gradient(90deg,#07F3D0 0%,#4BE38C 100%);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+       font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  h1,h2,h3,.num{font-family:"Jura","Manrope",sans-serif;letter-spacing:.02em}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 80px}
+
+  header{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:28px}
+  .eyebrow{color:var(--aqua);font-size:12px;letter-spacing:.18em;text-transform:uppercase;font-weight:700}
+  h1{font-size:30px;margin:8px 0 6px;font-weight:700}
+  .meta{color:var(--ink-3);font-size:13px}
+  .badge{display:inline-block;border:1px solid var(--line);border-radius:999px;
+         padding:3px 10px;font-size:11px;color:var(--ink-2);margin-left:8px}
+
+  section{margin-top:44px}
+  h2{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);
+     margin:0 0 4px;font-weight:700}
+  .sub{color:var(--ink-3);font-size:13px;margin:0 0 18px}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .kpi .lab{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .kpi .num{font-size:34px;font-weight:700;margin:6px 0 2px;
+            background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .kpi .sub2{font-size:12px;color:var(--ink-3)}
+
+  .alert{display:flex;gap:10px;align-items:flex-start;background:var(--surface);
+         border:1px solid var(--line);border-left-width:3px;border-radius:8px;
+         padding:12px 14px;margin-bottom:8px;font-size:14px}
+  .alert.pos{border-left-color:var(--pos)} .alert.neg{border-left-color:var(--neg)}
+  .alert .dot{font-size:11px;margin-top:3px}
+  .alert.pos .dot{color:var(--pos)} .alert.neg .dot{color:var(--neg)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px}
+  .scroll{overflow-x:auto}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:620px}
+  th{text-align:right;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+     color:var(--ink-3);font-weight:700;padding:0 10px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:11px 10px;border-bottom:1px solid var(--line);text-align:right;
+     font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:0}
+  tr.bse td{background:var(--aqua-dim)}
+  tr.bse td:first-child{font-weight:700}
+  .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;
+          background:var(--ctx);vertical-align:middle}
+  tr.bse .swatch{background:var(--aqua)}
+  .muted{color:var(--ink-3)}
+
+  /* Barras: la marca focal en aqua, el resto en un único neutro.
+     La identidad la da la etiqueta, nunca el color. */
+  .bars{display:flex;flex-direction:column;gap:11px}
+  .bar-row{display:grid;grid-template-columns:120px 1fr 62px;gap:12px;align-items:center}
+  .bar-name{font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-row.focal .bar-name{color:var(--ink);font-weight:700}
+  .bar-track{height:14px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:0 4px 4px 0;background:var(--ctx);
+            transition:width .5s ease}
+  .bar-row.focal .bar-fill{background:var(--grad)}
+  .bar-val{font-size:13px;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  .bar-row.focal .bar-val{color:var(--ink);font-weight:700}
+
+  .legend{display:flex;gap:18px;font-size:12px;color:var(--ink-2);margin-bottom:16px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+
+  .toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:16px}
+  .toggle button{background:transparent;border:0;color:var(--ink-3);padding:7px 14px;
+                 font-size:12px;cursor:pointer;font-family:inherit}
+  .toggle button[aria-pressed="true"]{background:var(--aqua);color:#04211C;font-weight:700}
+
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .grid-line{stroke:var(--line);stroke-width:1}
+  .axis-lab{fill:var(--ink-3);font-size:11px;font-family:"Manrope",sans-serif}
+  .hit{fill:transparent;cursor:pointer}
+
+  .terr{display:flex;flex-direction:column;gap:14px}
+  .terr-row{border-bottom:1px solid var(--line);padding-bottom:14px}
+  .terr-row:last-child{border-bottom:0;padding-bottom:0}
+  .terr-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px}
+  .terr-name{font-size:14px;font-weight:700}
+  .terr-meta{font-size:12px;color:var(--ink-3)}
+  .terr-track{height:10px;background:var(--surface-2);border-radius:3px;display:flex;overflow:hidden;gap:2px}
+  .terr-bse{background:var(--grad)} .terr-otros{background:var(--ctx)}
+  .free{color:var(--aqua);font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+
+  .posts{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .post{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;
+        display:block;text-decoration:none;color:inherit;transition:border-color .2s}
+  .post:hover{border-color:var(--aqua)}
+  .post .top{display:flex;justify-content:space-between;font-size:11px;margin-bottom:8px}
+  .post .brand{font-weight:700;color:var(--aqua)}
+  .post .eng{color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .post p{margin:0 0 8px;font-size:13px;color:var(--ink-2);
+          display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .post .tag{font-size:11px;color:var(--ink-3)}
+
+  .cloud{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline}
+  .cloud span{color:var(--ink-2)}
+
+  .tip{position:fixed;pointer-events:none;background:#04211C;border:1px solid var(--aqua);
+       border-radius:8px;padding:8px 11px;font-size:12px;color:var(--ink);opacity:0;
+       transition:opacity .12s;z-index:50;white-space:nowrap}
+  .tip b{color:var(--aqua)}
+
+  .empty{text-align:center;padding:70px 24px;background:var(--surface);
+         border:1px dashed var(--line);border-radius:14px}
+  .empty h3{font-size:20px;margin:0 0 10px}
+  .empty p{color:var(--ink-3);max-width:520px;margin:0 auto 18px}
+  code{background:var(--surface-2);border:1px solid var(--line);border-radius:5px;
+       padding:2px 7px;font-size:12.5px;color:var(--aqua)}
+  .steps{text-align:left;max-width:520px;margin:0 auto;color:var(--ink-2);font-size:14px;line-height:2}
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);
+         color:var(--ink-3);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="tip" id="tip"></div>
+
+<!-- Carga local: el .js funciona por file://, donde fetch() está bloqueado. -->
+<script src="monitor.data.js" onerror="window.__noData=true"></script>
+<script>
+const NF = new Intl.NumberFormat("es-UY");
+const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content; };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+const tip = document.getElementById("tip");
+function showTip(e, html){
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY - r.height - 10;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y < 8) y = e.clientY + 16;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+const hideTip = () => tip.style.opacity = 0;
+
+function empty(){
+  document.getElementById("app").innerHTML = `
+    <header>
+      <div class="eyebrow">CiudadanIA · Inteligencia de categoría</div>
+      <h1>Monitor BSE</h1>
+      <div class="meta">Seguros · Uruguay — un año de actividad en redes de BSE y la competencia</div>
+    </header>
+    <div class="empty">
+      <h3>Todavía no hay datos capturados</h3>
+      <p>El monitor está listo. Falta correr la captura de Apify una vez para llenar la ventana
+         de doce meses; después el tablero se dibuja solo.</p>
+      <div class="steps">
+        <div>1. <code>export APIFY_TOKEN=apify_api_xxx</code></div>
+        <div>2. <code>python3 fetch_apify.py</code> &nbsp;<span class="muted">— trae los posteos</span></div>
+        <div>3. <code>python3 analyze.py</code> &nbsp;<span class="muted">— calcula las métricas</span></div>
+        <div>4. Recargá esta página.</div>
+      </div>
+    </div>`;
+}
+
+function render(D){
+  const brands = D.brands;
+  const activas = brands.filter(b => b.posts > 0);
+  const bse = brands.find(b => b.star);
+  const maxSov = Math.max(...activas.map(b => b.sov_eng), 1);
+
+  const barras = (val, fmt) => activas.map(b => {
+    const v = val(b), pct = Math.max(v / Math.max(...activas.map(val), 1) * 100, 1.5);
+    return `<div class="bar-row ${b.star ? "focal" : ""}">
+      <div class="bar-name">${esc(b.n)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <div class="bar-val">${fmt(v)}</div>
+    </div>`;
+  }).join("");
+
+  const sinCuenta = brands.filter(b => b.sin_cuenta);
+
+  document.getElementById("app").innerHTML = `
+    <header>
+      <div class="eyebrow">CiudadanIA · Inteligencia de categoría</div>
+      <h1>Monitor BSE</h1>
+      <div class="meta">
+        ${esc(D.meta.categoria)} · ventana ${esc(D.meta.ventana.desde)} → ${esc(D.meta.ventana.hasta)}
+        (${D.meta.ventana.dias} días) · actualizado ${esc(D.meta.generado)}
+        <span class="badge">${D.meta.ia ? "Territorios clasificados con IA" : "Territorios por reglas"}</span>
+      </div>
+    </header>
+
+    <section>
+      <div class="kpis">${D.kpis.map(k => `
+        <div class="kpi">
+          <div class="lab">${esc(k.lab)}</div>
+          <div class="num">${esc(k.num)}</div>
+          <div class="sub2">${esc(k.sub)}</div>
+        </div>`).join("")}
+      </div>
+    </section>
+
+    ${D.alertas.length ? `<section>
+      <h2>Lo que salta a la vista</h2>
+      <p class="sub">Leído de los datos de la ventana, no de una opinión del equipo.</p>
+      ${D.alertas.map(a => `<div class="alert ${a.lvl}">
+        <span class="dot">●</span><div>${esc(a.t)}</div></div>`).join("")}
+    </section>` : ""}
+
+    <section>
+      <h2>Quién manda la conversación</h2>
+      <p class="sub">Share of engagement: qué porción de toda la interacción de la categoría se lleva
+         cada marca. Es más honesto que el share de posteos — publicar mucho no es ser escuchado.</p>
+      <div class="card">
+        <div class="legend">
+          <span><i style="background:var(--aqua)"></i>BSE</span>
+          <span><i style="background:var(--ctx)"></i>Competencia</span>
+        </div>
+        <div class="toggle" id="tg">
+          <button data-m="sov_eng" aria-pressed="true">Share de engagement</button>
+          <button data-m="posts" aria-pressed="false">Volumen de posteos</button>
+          <button data-m="eng_rate" aria-pressed="false">Tasa de engagement</button>
+        </div>
+        <div class="bars" id="bars">${barras(b => b.sov_eng, v => v.toFixed(1) + "%")}</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>La tabla completa</h2>
+      <p class="sub">Seis meses, todas las marcas relevadas.</p>
+      <div class="card scroll">
+        <table>
+          <thead><tr>
+            <th>Marca</th><th>Posteos</th><th>Por semana</th><th>Seguidores</th>
+            <th>Engagement</th><th>Medio x post</th><th>Tasa</th><th>Share eng.</th>
+          </tr></thead>
+          <tbody>${brands.map(b => b.sin_cuenta
+            ? `<tr><td><span class="swatch"></span>${esc(b.n)}</td>
+                 <td colspan="7" class="muted" style="text-align:left">
+                   Sin cuenta propia en Uruguay — comunica por el canal del banco.</td></tr>`
+            : `<tr class="${b.star ? "bse" : ""}">
+                 <td><span class="swatch"></span>${esc(b.n)}</td>
+                 <td>${NF.format(b.posts)}</td>
+                 <td>${b.cadencia}</td>
+                 <td>${b.seguidores ? NF.format(b.seguidores) : "—"}</td>
+                 <td>${NF.format(b.eng)}</td>
+                 <td>${NF.format(b.eng_prom)}</td>
+                 <td>${b.eng_rate ? b.eng_rate + "%" : "—"}</td>
+                 <td>${b.sov_eng}%</td>
+               </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Cómo evolucionó</h2>
+      <p class="sub">BSE contra el promedio de la competencia, mes a mes. Dos series, una escala.</p>
+      <div class="card">
+        <div class="legend">
+          <span><i style="background:var(--aqua)"></i>BSE</span>
+          <span><i style="background:var(--ctx)"></i>Promedio competencia</span>
+        </div>
+        <div class="toggle" id="tgl">
+          <button data-s="meses" aria-pressed="true">Posteos por mes</button>
+          <button data-s="meses_eng" aria-pressed="false">Engagement por mes</button>
+        </div>
+        <div id="line"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Territorios de comunicación</h2>
+      <p class="sub">De qué habla la categoría, y cuánto de eso es BSE. Donde la barra aqua no aparece,
+         el BSE no está — ahí puede haber océano libre o un flanco descubierto.</p>
+      <div class="card"><div class="terr">${D.territorios.map(t => `
+        <div class="terr-row">
+          <div class="terr-head">
+            <div class="terr-name">${esc(t.k)}</div>
+            <div class="terr-meta">
+              ${t.v} posteos · ${t.pct}% de la categoría
+              ${t.bse_pct === 0 ? '<span class="free">· sin BSE</span>' : ""}
+            </div>
+          </div>
+          <div class="terr-track">
+            ${t.bse_pct ? `<div class="terr-bse" style="width:${t.bse_pct}%"></div>` : ""}
+            <div class="terr-otros" style="width:${100 - t.bse_pct}%"></div>
+          </div>
+          <div class="terr-meta" style="margin-top:6px">
+            BSE ${t.bse_pct}% · lo ocupan: ${t.marcas.map(esc).join(", ")}
+          </div>
+        </div>`).join("")}
+      </div></div>
+    </section>
+
+    <section>
+      <h2>Los diez posteos más potentes de la categoría</h2>
+      <p class="sub">Ordenados por engagement real. Cada uno abre el posteo original.</p>
+      <div class="posts">${D.top_categoria.map(p => `
+        <a class="post" href="${esc(p.url)}" target="_blank" rel="noopener">
+          <div class="top">
+            <span class="brand">${esc(p.marca)}</span>
+            <span class="eng">${NF.format(p.eng)} interacciones</span>
+          </div>
+          <p>${esc(p.texto) || "<span class='muted'>(sin texto)</span>"}</p>
+          <div class="tag">${esc(p.red)} · ${esc(p.fecha)} · ${esc(p.territorio)}</div>
+        </a>`).join("")}
+      </div>
+    </section>
+
+    <section>
+      <h2>El vocabulario de la categoría</h2>
+      <p class="sub">Términos y hashtags más usados en los ${NF.format(D.meta.total_posts)} posteos.</p>
+      <div class="card"><div class="cloud" id="cloud"></div></div>
+    </section>
+
+    <footer>
+      ${esc(D.meta.fuente)}<br>
+      ${sinCuenta.length ? "Ausencia deliberada: " + sinCuenta.map(b => esc(b.n)).join(", ") + " no tiene cuenta propia en Uruguay.<br>" : ""}
+      Monitor BSE · CiudadanIA — Ciudadana. Datos vía Apify.
+    </footer>`;
+
+  // Nube: el peso se mapea a tamaño de texto, no a color (el color no codifica nada acá).
+  const cloud = document.getElementById("cloud");
+  const maxW = Math.max(...D.keywords.map(k => k.s), 1);
+  D.keywords.forEach(k => {
+    const s = 13 + (k.s / maxW) * 17;
+    const el = document.createElement("span");
+    el.textContent = k.w;
+    el.style.fontSize = s.toFixed(1) + "px";
+    if (k.s / maxW > 0.6) { el.style.color = "var(--aqua)"; el.style.fontWeight = 700; }
+    el.title = k.s + " menciones";
+    cloud.appendChild(el);
+  });
+
+  // Toggle de barras
+  const fmts = {
+    sov_eng: v => v.toFixed(1) + "%",
+    posts: v => NF.format(v),
+    eng_rate: v => v ? v.toFixed(2) + "%" : "—",
+  };
+  document.getElementById("tg").addEventListener("click", e => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    document.querySelectorAll("#tg button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b === btn)));
+    const m = btn.dataset.m;
+    document.getElementById("bars").innerHTML = barras(b => b[m], fmts[m]);
+  });
+
+  // Línea temporal
+  function drawLine(serie){
+    const keys = D.meses_key, labs = D.meses;
+    if (!keys.length) return;
+    const comp = activas.filter(b => !b.star);
+    const bseV = keys.map(k => (bse && bse[serie][k]) || 0);
+    const compV = keys.map(k =>
+      comp.length ? comp.reduce((s, b) => s + (b[serie][k] || 0), 0) / comp.length : 0);
+
+    const W = 900, H = 260, P = { t: 16, r: 16, b: 30, l: 52 };
+    const max = Math.max(...bseV, ...compV, 1);
+    const x = i => P.l + (W - P.l - P.r) * (keys.length === 1 ? .5 : i / (keys.length - 1));
+    const y = v => P.t + (H - P.t - P.b) * (1 - v / max);
+    const path = a => a.map((v, i) => (i ? "L" : "M") + x(i) + " " + y(v)).join(" ");
+
+    const ticks = [0, .5, 1].map(f => {
+      const v = max * f;
+      return `<line class="grid-line" x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}"/>
+              <text class="axis-lab" x="${P.l - 10}" y="${y(v) + 4}" text-anchor="end">${NF.format(Math.round(v))}</text>`;
+    }).join("");
+
+    const dots = (arr, color) => arr.map((v, i) =>
+      `<circle cx="${x(i)}" cy="${y(v)}" r="4.5" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`).join("");
+
+    const hits = keys.map((k, i) =>
+      `<rect class="hit" x="${x(i) - 22}" y="${P.t}" width="44" height="${H - P.t - P.b}"
+             data-i="${i}"></rect>`).join("");
+
+    document.getElementById("line").innerHTML =
+      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución mensual de BSE y el promedio de la competencia">
+         ${ticks}
+         ${labs.map((l, i) => `<text class="axis-lab" x="${x(i)}" y="${H - 8}" text-anchor="middle">${esc(l)}</text>`).join("")}
+         <path d="${path(compV)}" fill="none" stroke="var(--ctx)" stroke-width="2" stroke-linejoin="round"/>
+         <path d="${path(bseV)}" fill="none" stroke="var(--aqua)" stroke-width="2" stroke-linejoin="round"/>
+         ${dots(compV, "var(--ctx)")}
+         ${dots(bseV, "var(--aqua)")}
+         ${hits}
+       </svg>`;
+
+    document.querySelectorAll("#line .hit").forEach(r => {
+      r.addEventListener("mousemove", e => {
+        const i = +r.dataset.i;
+        showTip(e, `<b>${esc(labs[i])}</b><br>BSE: ${NF.format(Math.round(bseV[i]))}<br>
+                    Promedio competencia: ${NF.format(Math.round(compV[i]))}`);
+      });
+      r.addEventListener("mouseleave", hideTip);
+    });
+  }
+  drawLine("meses");
+  document.getElementById("tgl").addEventListener("click", e => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    document.querySelectorAll("#tgl button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b === btn)));
+    drawLine(btn.dataset.s);
+  });
+}
+
+const data = window.MONITOR_DATA;
+if (!data || !data.brands) empty(); else render(data);
+</script>
+</body>
+</html>

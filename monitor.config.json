@@ -1,0 +1,114 @@
+{
+  "_comment": "Monitor BSE — configuración. Ventana móvil de 12 meses de actividad en redes de BSE y la competencia. La capa VIVA (posteos, engagement, formatos, hashtags) la trae Apify; los territorios los clasifica analyze.py (reglas + IA opcional). Para cambiar de categoría, editar 'categoria' y 'brands'.",
+
+  "categoria": "Seguros · Uruguay",
+  "ventana_dias": 365,
+
+  "_nota_tiktok": "Búsqueda web (jul 2026): NINGUNA aseguradora uruguaya tiene cuenta oficial en TikTok. Lo que aparece bajo 'seguros Uruguay' en TikTok son corredores independientes y usuarios quejándose de siniestros — no las marcas. Es un océano libre real, no un dato faltante. El soporte de TikTok queda cableado en el pipeline: en cuanto alguna marca abra cuenta, se agrega el handle en 'tt' y se releva sin tocar código.",
+  "_nota_otras_redes": "X/Twitter, LinkedIn y YouTube quedan fuera de esta versión. X está muerta como canal de marca en la categoría; LinkedIn es comunicación corporativa (otro público, otra conversación); YouTube es el repositorio de los spots de TV, que ya se cubren por el análisis de campañas. Si se quiere sumar alguna, se agrega el actor en 'actors' y un normalizador en fetch_apify.py.",
+
+  "actors": {
+    "instagram_posts": "apify~instagram-scraper",
+    "instagram_profile": "apify~instagram-profile-scraper",
+    "facebook_posts": "apify~facebook-posts-scraper",
+    "tiktok_posts": "clockworks~tiktok-scraper"
+  },
+
+  "limites": {
+    "_comment": "Tope de posteos por marca y por red. Protege el gasto en Apify: el costo escala con la cantidad de items scrapeados. Con ventana de 365 días el tope es 500: una marca muy activa (5 posteos/semana) hace ~260 al año, así que 500 deja margen sin dejar que la factura se dispare. Techo duro de gasto = 500 × marcas × redes.",
+    "posts_por_marca_por_red": 500
+  },
+
+  "brands": [
+    {
+      "n": "BSE",
+      "star": true,
+      "ig": "bseuruguay",
+      "fb": "BSEuruguay",
+      "tt": null,
+      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026). TikTok: no se encontró cuenta oficial — la categoría entera está ausente de TikTok (ver _nota_tiktok)."
+    },
+    {
+      "n": "Mapfre",
+      "star": false,
+      "ig": "mapfre.uy",
+      "fb": "segurosmapfreuruguay",
+      "tt": null,
+      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026)."
+    },
+    {
+      "n": "SURA",
+      "star": false,
+      "ig": "segurossurauy",
+      "fb": "SegurosSURAUruguay",
+      "tt": null,
+      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026). Existe también @segurossurauru (IG, aparentemente secundaria) y @SegurosSURAuy en X/Twitter."
+    },
+    {
+      "n": "San Cristóbal",
+      "star": false,
+      "ig": "sancristobaluy",
+      "fb": "sancristobaluy",
+      "tt": null,
+      "_handles_verificados": "IG y FB confirmados (cuenta Uruguay, no confundir con @sancristobalseg / sancristobalok de Argentina)."
+    },
+    {
+      "n": "Porto Seguro",
+      "star": false,
+      "ig": "portoseguro_uruguay",
+      "fb": null,
+      "tt": null,
+      "_handles_verificados": "IG ya verificado en el Radar de Categoría."
+    },
+    {
+      "n": "HDI",
+      "star": false,
+      "ig": "hdisegurosuy",
+      "fb": null,
+      "tt": null,
+      "_handles_verificados": "IG confirmado por búsqueda web (jul 2026). Cuenta chica (~650 seguidores)."
+    },
+    {
+      "n": "MetLife",
+      "star": false,
+      "ig": "metlife_uruguay",
+      "fb": "MetLifeUruguay",
+      "tt": null,
+      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026)."
+    },
+    {
+      "n": "Surco",
+      "star": false,
+      "ig": "surcoseguros",
+      "fb": null,
+      "tt": null,
+      "_handles_verificados": "IG ya verificado en el Radar de Categoría."
+    },
+    {
+      "n": "Zurich Santander",
+      "star": false,
+      "ig": null,
+      "fb": null,
+      "tt": null,
+      "_handles_verificados": "SIN cuenta propia en Uruguay: comunica por el canal del banco (Santander). Se deja en el monitor como ausencia deliberada — es un hallazgo, no un dato faltante."
+    }
+  ],
+
+  "territorios": {
+    "_comment": "Lexicón de clasificación por reglas. Cada posteo se asigna al territorio con más coincidencias en su caption/hashtags. classify.py puede sobrescribir esto con IA (Claude) si hay ANTHROPIC_API_KEY.",
+    "Institucional / país": ["orgullo", "uruguay", "uruguayos", "país", "pais", "todos", "115 años", "historia", "celeste", "mundial", "identidad", "aniversario", "banco de seguros"],
+    "Bien público / prevención": ["prevención", "prevencion", "seguridad vial", "accidente", "accidentes", "siniestralidad", "motociclista", "casco", "unasev", "riesgo laboral", "trabajo seguro", "cuidado", "consejos"],
+    "Producto / oferta": ["cobertura", "todo riesgo", "póliza", "poliza", "contratá", "contrata", "cotizá", "cotiza", "seguro de auto", "hogar", "granizo", "cristales", "soa", "garantía de alquiler", "garantia de alquiler", "descuento", "promoción", "promocion"],
+    "Servicio / digital": ["app", "autogestión", "autogestion", "online", "en línea", "en linea", "web", "denuncia", "siniestro online", "en un toque", "self", "portal", "whatsapp"],
+    "Vida / ahorro": ["vida", "ahorro", "futuro", "jubilación", "jubilacion", "protección crediticia", "proteccion crediticia", "largo plazo", "familia", "plan"],
+    "Marca / cercanía": ["acompañar", "acompaña", "protegido", "tranquilidad", "cerca", "confianza", "estamos", "junto a", "equipo"],
+    "Cultura / patrocinio": ["patrocinio", "sponsor", "auspiciante", "evento", "festival", "deporte", "fútbol", "futbol", "básquetbol", "basquetbol", "carnaval", "expo"],
+    "RSE / comunidad": ["comunidad", "voluntariado", "donación", "donacion", "inclusión", "inclusion", "sustentabilidad", "medioambiente", "diversidad", "rse"]
+  },
+
+  "alertas": {
+    "_comment": "Reglas para generar alertas automáticas en el dashboard.",
+    "pico_engagement_x": 3.0,
+    "caida_cadencia_pct": 40
+  }
+}

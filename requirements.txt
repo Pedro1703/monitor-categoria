@@ -1,0 +1,3 @@
+# El monitor corre con la librería estándar de Python 3: no necesitás instalar nada.
+# Esto es solo para la clasificación opcional con IA (analyze.py --ia):
+anthropic>=0.40

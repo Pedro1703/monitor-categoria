@@ -1,0 +1,13 @@
+# ── DATOS: nunca se suben. El repo es público; la data de la categoría no.
+raw/
+monitor.json
+monitor.data.js
+
+# ── SECRETOS
+.env
+*.token
+
+# ── Ruido
+__pycache__/
+*.pyc
+.DS_Store
