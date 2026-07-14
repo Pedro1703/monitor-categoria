@@ -2,11 +2,15 @@
 .env
 *.token
 
-# ── DATOS de la categoría: el repo es código, no data
+# ── DATOS de la categoría: el repo es código, no inteligencia competitiva
 raw/
 monitor.json
 monitor.data.js
+reporte_sentimiento.json
 Informe_Ciudadana.pptx
+
+# ── Temporales de Office
+~$*
 
 # ── Ruido
 __pycache__/

@@ -22,17 +22,14 @@ from urllib.parse import urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import config_local  # noqa: E402
+import costos  # noqa: E402
 
 CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
 RAW_DIR = os.path.join(HERE, "raw")
 PUERTO = 8765
 
-# Precios Apify (plan Starter). Se usan solo para estimar antes de gastar.
-USD_1000_POSTS = 2.30
-USD_1000_COMENTARIOS = 2.30
-USD_1000_POSTS_FB = 5.00      # el actor de FB es más caro y más variable
-# Claude clasificando: ~1.500 tokens por comentario ida y vuelta, Opus.
-USD_1000_CLASIF = 1.80
+# Los precios ya no viven acá: costos.py los tiene verificados contra la facturación
+# real, y si hay corridas previas usa el promedio medido en vez de una constante.
 
 # Estado de la corrida en curso (lo lee el front por polling).
 ESTADO = {"corriendo": False, "paso": "", "log": [], "fin": None, "error": None}
@@ -45,50 +42,100 @@ def log(msg):
 
 # ────────────────────────────────────────────────── estimación
 
-def estimar(cuentas, redes, dias, con_comentarios):
-    """Estima volumen y costo. NO gasta nada: son cuentas sobre supuestos declarados.
+def estimar(cuentas, redes, dias, con_comentarios, con_ia=True):
+    """Estima volumen y costo. NO gasta nada.
 
-    El supuesto de cadencia (posteos/semana) es lo único que se adivina. Después de la
-    primera corrida real el número deja de ser un supuesto: se lee del crudo.
+    Principio: distinguir siempre lo MEDIDO de lo SUPUESTO, y decirlo. El usuario
+    decide si vale la pena gastar, y para eso necesita saber cuánto confiar en el número.
+
+      · Los precios unitarios están VERIFICADOS contra la facturación real de Apify.
+      · El VOLUMEN es lo incierto. Si ya se corrió antes, se usa la cadencia real de
+        cada marca (deja de ser supuesto). Si no, un supuesto declarado, con una banda
+        de ±45% — que es la incertidumbre real medida contra la primera corrida.
+      · Los comentarios, si hay una captura previa, son un conteo EXACTO: sabemos
+        cuántos hay porque cada posteo trajo su commentsCount.
     """
     semanas = dias / 7.0
     hist = _historico()
+    lineas = []
 
-    filas, tot_posts_ig, tot_posts_fb = [], 0, 0
+    filas, tot_ig, tot_fb = [], 0, 0
     for c in cuentas:
         cad = hist.get(c["n"], {}).get("cadencia")
         supuesto = cad is None
-        cad = cad if cad is not None else 2.5   # supuesto por defecto: 2,5 posteos/semana
-        n_redes_ig = 1 if (c.get("ig") and "ig" in redes) else 0
-        n_redes_fb = 1 if (c.get("fb") and "fb" in redes) else 0
-        p_ig = int(cad * semanas) * n_redes_ig
-        p_fb = int(cad * semanas * 0.8) * n_redes_fb   # en FB suelen postear algo menos
-        tot_posts_ig += p_ig
-        tot_posts_fb += p_fb
+        cad = cad if cad is not None else costos.CADENCIA_DEFECTO
+        p_ig = int(cad * semanas) if (c.get("ig") and "ig" in redes) else 0
+        p_fb = int(cad * semanas * costos.CADENCIA_FB_FACTOR) if (c.get("fb") and "fb" in redes) else 0
+        tot_ig += p_ig
+        tot_fb += p_fb
         filas.append({"marca": c["n"], "posts_ig": p_ig, "posts_fb": p_fb, "supuesto": supuesto})
 
-    costo = tot_posts_ig / 1000 * USD_1000_POSTS + tot_posts_fb / 1000 * USD_1000_POSTS_FB
+    pr_ig, f_ig = costos.precio("ig_post")
+    pr_fb, f_fb = costos.precio("fb_post")
+    costo = 0.0
+    if tot_ig:
+        c_ig = tot_ig / 1000 * pr_ig
+        costo += c_ig
+        lineas.append({"k": "Posteos de Instagram", "n": tot_ig, "usd": round(c_ig, 2),
+                       "precio": "US$ %.2f /1.000" % pr_ig, "fuente": f_ig})
+    if tot_fb:
+        c_fb = tot_fb / 1000 * pr_fb
+        costo += c_fb
+        lineas.append({"k": "Posteos de Facebook", "n": tot_fb, "usd": round(c_fb, 2),
+                       "precio": "US$ %.2f /1.000" % pr_fb, "fuente": f_fb})
 
-    # Comentarios: si ya hay una corrida previa, sabemos cuántos hay DE VERDAD.
-    com = {"n": 0, "costo": 0.0, "clasif": 0.0, "real": False, "sorteos_excluidos": 0}
+    com = {"n": 0, "exacto": False, "sorteos_excluidos": 0, "usd_sorteos": 0}
     if con_comentarios:
-        reales = _comentarios_reales(dias)
+        # OJO: el conteo exacto solo vale para las marcas que REALMENTE se capturaron.
+        # Si el usuario pide una marca nueva, no se le puede dar el conteo de otra.
+        marcas_ig = [c["n"] for c in cuentas if c.get("ig") and "ig" in redes]
+        reales = _comentarios_reales(marcas_ig)
         if reales is not None:
             com["n"], com["sorteos_excluidos"] = reales
-            com["real"] = True
+            com["exacto"] = True     # no es estimación: es el conteo real de ESTAS marcas
         else:
-            # Sin datos previos: 0,8 comentarios por posteo (la categoría conversa poquísimo).
-            com["n"] = int(tot_posts_ig * 0.8)
-        com["costo"] = com["n"] / 1000 * USD_1000_COMENTARIOS
-        com["clasif"] = com["n"] / 1000 * USD_1000_CLASIF
-        costo += com["costo"] + com["clasif"]
+            # Sin captura previa de estas marcas: la categoría conversa poquísimo
+            # (0,8 comentarios por posteo, fuera de sorteos). El supuesto más frágil.
+            com["n"] = int(tot_ig * 0.8)
+
+        pr_c, f_c = costos.precio("ig_comment")
+        c_com = com["n"] / 1000 * pr_c
+        costo += c_com
+        lineas.append({"k": "Comentarios (sin sorteos)", "n": com["n"], "usd": round(c_com, 2),
+                       "precio": "US$ %.2f /1.000" % pr_c,
+                       "fuente": "conteo EXACTO de la captura previa" if com["exacto"] else f_c})
+        com["usd_sorteos"] = round(com["sorteos_excluidos"] / 1000 * pr_c, 2)
+
+        if con_ia:
+            pr_ia, f_ia = costos.precio("clasif_opus")
+            c_ia = com["n"] / 1000 * pr_ia
+            costo += c_ia
+            lineas.append({"k": "Clasificación con IA", "n": com["n"], "usd": round(c_ia, 2),
+                           "precio": "US$ %.2f /1.000" % pr_ia, "fuente": f_ia})
+
+    # La banda de incertidumbre depende de si medimos ESTAS marcas — no de si existe
+    # alguna corrida previa de cualquier cosa. Se pondera por volumen: si el 80% de los
+    # posteos estimados viene de marcas que nunca medimos, la banda es casi la de una
+    # primera corrida, aunque una marca conocida esté en la lista.
+    vol_supuesto = sum(f["posts_ig"] + f["posts_fb"] for f in filas if f["supuesto"])
+    vol_total = max(tot_ig + tot_fb, 1)
+    frac_supuesta = vol_supuesto / vol_total
+    banda = (costos.BANDA_CON_HISTORIA
+             + frac_supuesta * (costos.BANDA_SIN_HISTORIA - costos.BANDA_CON_HISTORIA))
+    hay_hist = bool(hist)
 
     return {
         "filas": filas,
-        "posts_ig": tot_posts_ig, "posts_fb": tot_posts_fb,
+        "lineas": lineas,
+        "posts_ig": tot_ig, "posts_fb": tot_fb,
         "comentarios": com,
         "costo_total": round(costo, 2),
-        "hay_historico": bool(hist),
+        "costo_min": round(costo * (1 - banda), 2),
+        "costo_max": round(costo * (1 + banda), 2),
+        "banda_pct": int(banda * 100),
+        "hay_historico": hay_hist,
+        "marcas_supuestas": [f["marca"] for f in filas if f["supuesto"]],
+        "gasto_acumulado": costos.gasto_total(),
     }
 
 
@@ -107,16 +154,25 @@ def _historico():
         return {}
 
 
-def _comentarios_reales(dias):
-    """Cuántos comentarios NO-sorteo existen realmente, según la última captura."""
+def _comentarios_reales(marcas):
+    """Comentarios NO-sorteo que existen de verdad, SOLO para las marcas pedidas.
+
+    Devuelve None si alguna de esas marcas no está en la captura previa: en ese caso
+    no hay conteo exacto que dar, y hay que estimar. Antes esto devolvía el total de
+    la captura sin mirar de qué marcas era — o sea, le daba a una marca nueva el
+    número de otra. Un estimado equivocado es peor que un estimado con banda ancha.
+    """
     ruta = os.path.join(RAW_DIR, "posts.jsonl")
-    if not os.path.exists(ruta):
+    if not os.path.exists(ruta) or not marcas:
         return None
     try:
         cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
         pat = re.compile(cfg["comentarios"]["patron_sorteo"], re.I)
         posts = [json.loads(l) for l in open(ruta, encoding="utf-8") if l.strip()]
-        ig = [p for p in posts if p["red"] == "Instagram"]
+        capturadas = {p["marca"] for p in posts if p["red"] == "Instagram"}
+        if not set(marcas).issubset(capturadas):
+            return None          # hay marcas que nunca medimos: no hay conteo exacto
+        ig = [p for p in posts if p["red"] == "Instagram" and p["marca"] in marcas]
         tope = cfg["comentarios"]["por_posteo"]
         reales = sum(min(p["comments"], tope) for p in ig if not pat.search(p.get("texto") or ""))
         sorteos = sum(p["comments"] for p in ig if pat.search(p.get("texto") or ""))
@@ -157,6 +213,9 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia):
                 pasos.append(("Leyendo el sentimiento con IA…", [sys.executable, "sentimiento.py"]))
         pasos.append(("Calculando métricas…",
                       [sys.executable, "analyze.py"] + (["--ia"] if con_ia else [])))
+        if con_comentarios and con_ia:
+            pasos.append(("Cruzando léxico rioplatense × IA…",
+                          [sys.executable, "reporte_sentimiento.py"]))
         pasos.append(("Armando el PPT…", [sys.executable, "informe_ppt.py"]))
 
         for etiqueta, cmd in pasos:
@@ -260,7 +319,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if r == "/api/estimar":
             return self._json(estimar(body["cuentas"], body["redes"], int(body["dias"]),
-                                      bool(body.get("comentarios"))))
+                                      bool(body.get("comentarios")), bool(body.get("ia"))))
 
         if r == "/api/correr":
             if ESTADO["corriendo"]:

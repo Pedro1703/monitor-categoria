@@ -35,6 +35,7 @@ RAW_DIR = os.path.join(HERE, "raw")
 
 sys.path.insert(0, HERE)
 import config_local
+import costos
 config_local.cargar()   # lee el .env: las keys se configuran una vez
 
 APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "").strip()
@@ -281,6 +282,9 @@ def main():
                 "addParentData": False,
             }, "posteos IG · %d marcas" % len(ig_map))
             posts += [p for p in (norm_ig(i, ig_map) for i in items) if p]
+            costos.registrar("ig_post", len(items),
+                             len(items) / 1000 * costos.PRECIOS["ig_post"]["usd_1000"],
+                             "%d marcas · %d días" % (len(ig_map), dias))
 
             perf = run_actor(actors["instagram_profile"], {"usernames": list(ig_map)},
                              "perfiles IG (seguidores)")
@@ -303,6 +307,9 @@ def main():
                 "onlyPostsNewerThan": desde,
             }, "posteos FB · %d marcas" % len(fb_map))
             posts += [p for p in (norm_fb(i, fb_map) for i in items) if p]
+            costos.registrar("fb_post", len(items),
+                             len(items) / 1000 * costos.PRECIOS["fb_post"]["usd_1000"],
+                             "%d marcas · %d días" % (len(fb_map), dias))
 
     # ---- TikTok
     if "tt" in redes:

@@ -37,6 +37,7 @@ CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
 
 sys.path.insert(0, HERE)
 from fetch_apify import run_actor, chequear_conexion, _num, _fecha, APIFY_TOKEN  # noqa: E402
+import costos  # noqa: E402
 
 # Precio por resultado en Apify (plan Starter). Solo se usa para estimar antes de gastar.
 USD_POR_1000 = 2.30
@@ -178,6 +179,9 @@ def main():
         for c in comentarios:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
 
+    costos.registrar("ig_comment", len(items),
+                     len(items) / 1000 * costos.PRECIOS["ig_comment"]["usd_1000"],
+                     "%d posteos" % len(elegidos))
     real = len(comentarios) + de_la_marca
     print("\nOK · %d comentarios guardados (%d eran respuestas de la marca, descartados)"
           % (len(comentarios), de_la_marca))

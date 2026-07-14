@@ -76,7 +76,11 @@ CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
 
 sys.path.insert(0, HERE)
 import config_local
+import costos
 config_local.cargar()   # lee el .env: las keys se configuran una vez
+
+# Precio por millón de tokens (Opus 4.8 / Haiku 4.5). Para registrar gasto REAL.
+TARIFA = {"claude-opus-4-8": (5.0, 25.0), "claude-haiku-4-5": (1.0, 5.0)}
 
 LOTE = 60           # comentarios por llamada
 MUESTRA_VALID = 60  # comentarios para la validación / auditoría
@@ -203,6 +207,7 @@ def clasificar(comentarios, cfg, modelo, mezclar=False):
         random.shuffle(orden)   # 2ª pasada: otro orden, para que el contexto del lote no arrastre
 
     etiquetas, fallos = {}, 0
+    tok_in = tok_out = 0     # se registra el gasto REAL que reporta la API, no un estimado
     for ini in range(0, len(orden), LOTE):
         idxs = orden[ini:ini + LOTE]
         listado = "\n".join(
@@ -220,6 +225,8 @@ def clasificar(comentarios, cfg, modelo, mezclar=False):
                 messages=[{"role": "user", "content":
                            "Motivos posibles: %s\n\nComentarios:\n%s" % (", ".join(motivos), listado)}],
             )
+            tok_in += r.usage.input_tokens
+            tok_out += r.usage.output_tokens
             txt = next(b.text for b in r.content if b.type == "text")
             for it in json.loads(txt)["c"]:
                 j = it["i"]
@@ -233,6 +240,15 @@ def clasificar(comentarios, cfg, modelo, mezclar=False):
     if fallos:
         print("  [aviso] %d lote(s) fallaron: esos comentarios quedan sin etiqueta." % fallos,
               file=sys.stderr)
+
+    # Gasto real de esta clasificación, con los tokens que la propia API reportó.
+    p_in, p_out = TARIFA.get(modelo, (5.0, 25.0))
+    usd = tok_in * p_in / 1e6 + tok_out * p_out / 1e6
+    if etiquetas:
+        concepto = "clasif_haiku" if "haiku" in modelo else "clasif_opus"
+        costos.registrar(concepto, len(etiquetas), usd,
+                         "%d tok in · %d tok out · %s" % (tok_in, tok_out, modelo))
+        print("  costo real: USD %.3f  (%d tokens in · %d out)" % (usd, tok_in, tok_out))
     return etiquetas
 
 

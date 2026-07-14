@@ -270,31 +270,47 @@ async function estimar(){
   const e = await r.json();
 
   const com = e.comentarios;
-  const filas = [
-    ["Posteos de Instagram", NF.format(e.posts_ig)],
-    ["Posteos de Facebook", NF.format(e.posts_fb)],
-  ];
-  if (ULT.comentarios){
-    filas.push(["Comentarios (sin sorteos)", NF.format(com.n)]);
-    if (ULT.ia) filas.push(["Clasificación con IA", "USD " + com.clasif.toFixed(2)]);
-  }
+  const exacto = e.hay_historico && !e.marcas_supuestas.length;
 
   $("#costo").innerHTML = `
     <div class="costo">
-      <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700">Costo estimado</div>
+      <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700">
+        Costo estimado
+      </div>
       <div class="big">USD ${e.costo_total.toFixed(2)}</div>
-      <div style="font-size:14px">${ULT.dias} días · ${ULT.cuentas.length} marcas · ${ULT.redes.join(" + ").toUpperCase()}</div>
-      <table>${filas.map(f => `<tr><td>${f[0]}</td><td>${f[1]}</td></tr>`).join("")}</table>
+      <div style="font-size:14px;font-weight:700">
+        Entre USD ${e.costo_min.toFixed(2)} y USD ${e.costo_max.toFixed(2)}
+        <span style="font-weight:400;opacity:.7">(±${e.banda_pct}%)</span>
+      </div>
+      <div style="font-size:13px;margin-top:6px;opacity:.75">
+        ${ULT.dias} días · ${ULT.cuentas.length} marcas · ${ULT.redes.join(" + ").toUpperCase()}
+      </div>
+
+      <table>
+        <tr style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.6">
+          <td>Concepto</td><td style="text-align:right">Items</td><td>USD</td>
+        </tr>
+        ${e.lineas.map(l => `
+          <tr>
+            <td>${esc(l.k)}<div style="font-size:11px;opacity:.6">${esc(l.precio)} · ${esc(l.fuente)}</div></td>
+            <td style="text-align:right;font-weight:400">${NF.format(l.n)}</td>
+            <td>${l.usd.toFixed(2)}</td>
+          </tr>`).join("")}
+      </table>
+
       <div class="nota">
-        ${e.hay_historico
-          ? "Estimado con la cadencia real de la última corrida — no es un supuesto."
-          : "Primera corrida: la cadencia es un supuesto (2,5 posteos/semana por marca). El costo real puede variar."}
-        ${com.real ? `<br>Los ${NF.format(com.n)} comentarios son el número exacto: ya sabemos cuántos hay.` : ""}
-        ${com.sorteos_excluidos ? `<br><b>Se excluyen ${NF.format(com.sorteos_excluidos)} comentarios de sorteos</b> — son etiquetas a amigos, no opinión. Bajarlos costaría USD ${(com.sorteos_excluidos/1000*2.3).toFixed(0)} de más.` : ""}
+        ${exacto
+          ? "<b>Esta estimación NO es un supuesto.</b> Los precios están verificados contra tu factura de Apify, y el volumen sale de la cadencia real de cada marca en la última corrida."
+          : (e.marcas_supuestas.length
+              ? `<b>Ojo:</b> nunca medimos a ${e.marcas_supuestas.slice(0,3).map(esc).join(", ")}${e.marcas_supuestas.length>3 ? " y otras" : ""}. Para esas marcas el volumen es un supuesto (2,5 posteos/semana), y por eso la banda es ancha. Los precios unitarios sí están verificados.`
+              : "Primera corrida: el volumen es un supuesto. Los precios unitarios están verificados.")}
+        ${com.exacto ? `<br><br><b>Los ${NF.format(com.n)} comentarios son un conteo exacto</b>, no una estimación: cada posteo ya nos dijo cuántos tiene.` : ""}
+        ${com.sorteos_excluidos ? `<br><br><b>Te estamos ahorrando USD ${com.usd_sorteos.toFixed(2)}:</b> se excluyen ${NF.format(com.sorteos_excluidos)} comentarios de sorteos («@fulano vamos!!»). No son opinión y no aportan nada.` : ""}
+        ${e.gasto_acumulado ? `<br><br><span style="opacity:.7">Llevás gastados USD ${e.gasto_acumulado.toFixed(2)} en total con esta herramienta.</span>` : ""}
       </div>
     </div>
-    <div style="margin-top:18px;display:flex;gap:10px">
-      <button class="go" onclick="correr()">Confirmar y correr →</button>
+    <div style="margin-top:18px;display:flex;gap:10px;align-items:center">
+      <button class="go" onclick="correr()">Confirmar y gastar hasta USD ${e.costo_max.toFixed(2)} →</button>
       <button class="ghost" onclick="$('#s3').classList.add('off')">Cancelar</button>
     </div>`;
   $("#s3").classList.remove("off");
