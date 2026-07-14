@@ -36,7 +36,8 @@ EN_NUBE = bool(os.environ.get("PORT") or os.environ.get("JAVIA_PUERTO"))
 
 # Estado de la corrida en curso (lo lee el front por polling).
 ESTADO = {"corriendo": False, "paso": "", "paso_num": 0, "pasos": [], "pasos_total": 0,
-          "log": [], "fin": None, "error": None, "error_tipo": None}
+          "log": [], "fin": None, "error": None, "error_tipo": None,
+          "inicio": 0, "eta_min": 0}
 
 
 def log(msg):
@@ -235,10 +236,11 @@ def _clasificar_error(texto):
     return None
 
 
-def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True):
+def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8):
     """Ejecuta el pipeline completo en un hilo, reportando el paso actual."""
     ESTADO.update({"corriendo": True, "paso": "Preparando…", "paso_num": 0,
-                   "log": [], "fin": None, "error": None, "error_tipo": None})
+                   "log": [], "fin": None, "error": None, "error_tipo": None,
+                   "inicio": time.time(), "eta_min": eta_min})
     try:
         cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
         cfg["ventana_dias"] = dias
@@ -404,7 +406,7 @@ class Handler(BaseHTTPRequestHandler):
                 "categoria": cfg["categoria"],
                 "corrida": {k: ESTADO[k] for k in
                             ("corriendo", "paso", "paso_num", "pasos", "pasos_total",
-                             "log", "fin", "error", "error_tipo")},
+                             "log", "fin", "error", "error_tipo", "inicio", "eta_min")},
             })
         if r == "/tablero":
             return self._archivo(os.path.join(HERE, "index.html"), "text/html; charset=utf-8")
@@ -474,6 +476,7 @@ class Handler(BaseHTTPRequestHandler):
                 "dias": int(body["dias"]), "con_comentarios": bool(body.get("comentarios")),
                 "con_ia": bool(body.get("ia")),
                 "con_informe": bool(body.get("informe", True)),
+                "eta_min": est.get("eta_min", 8),
             }).start()
             return self._json({"ok": True})
 

@@ -404,13 +404,33 @@ async function correr(){
   poll();
 }
 
+function avisoReconecta(msg){
+  return `<div class="prog">
+    <div class="paso"><span class="spin"></span> <b>${esc(msg)}</b></div>
+    <div class="aviso">No cierres esta ventana. El servidor gratuito se reinicia de a ratos;
+    la barra vuelve sola en unos segundos.</div></div>`;
+}
 function mmss(seg){
   seg = Math.max(0, Math.round(seg));
   return `${Math.floor(seg/60)}:${String(seg%60).padStart(2,"0")}`;
 }
 
 async function poll(){
-  const d = await (await fetch("/api/estado")).json();
+  let d;
+  try {
+    const r = await fetch("/api/estado");
+    if (r.status === 401){ // sesión vencida (o el server reinició): reintentar, no morir
+      $("#run").innerHTML = avisoReconecta("La sesión expiró mientras el análisis seguía. Reconectando…");
+      return setTimeout(poll, 3000);
+    }
+    d = await r.json();
+  } catch(e) {
+    // El server se está reiniciando (típico del plan gratuito). El análisis sigue
+    // del otro lado; solo perdimos esta consulta. Reintentar sin cortar la barra.
+    $("#run").innerHTML = avisoReconecta("Reconectando con el servidor… (el análisis sigue corriendo)");
+    return setTimeout(poll, 3000);
+  }
+  if (!d || !d.corrida) return setTimeout(poll, 2000);
   if (!$("#creds").innerHTML) pintarCreds(d.credenciales);
   const c = d.corrida;
   if (!c.corriendo && !c.log.length) return;
@@ -424,8 +444,10 @@ async function poll(){
   const total = c.pasos_total || 6;
   const hechos = c.paso_num || 0;
   const pct = c.fin ? 100 : Math.min(96, (hechos / total) * 100);
-  const transcurrido = (Date.now() - T0) / 1000;
-  const restante = c.fin ? 0 : Math.max(0, ETA * 60 - transcurrido);
+  // Tiempo desde el servidor: no depende de si el navegador vio el arranque.
+  const transcurrido = c.inicio ? (Date.now()/1000 - c.inicio) : (Date.now()-T0)/1000;
+  const eta = (c.eta_min || ETA || 8) * 60;
+  const restante = c.fin ? 0 : Math.max(0, eta - transcurrido);
 
   $("#run").innerHTML = c.fin ? resultado(c.fin) : `
     <div class="prog">
