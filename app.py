@@ -283,7 +283,22 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
         ESTADO["pasos"] = [p[0] for p in pasos]
         ESTADO["pasos_total"] = len(pasos)
 
+        # Marca de inicio para el FRENO EN VIVO: de acá en más se mide el gasto REAL,
+        # no la estimación. Una estimación puede quedarse corta (categoría viral); el
+        # gasto real, no. Los pasos que gastan (Apify, Claude) escriben en el libro.
+        _cap = auth.TOPE_CORRIDA
+        _ini_gasto = costos.cantidad_registros()
+
         for i, (etiqueta, cmd) in enumerate(pasos):
+            # Antes de cada paso: ¿el gasto REAL de esta corrida ya se pasó del tope?
+            real = costos.gasto_desde(_ini_gasto)
+            if real > _cap:
+                ESTADO["error_tipo"] = "tope_superado"
+                for l in ["Gasto real de esta corrida: USD %.2f" % real,
+                          "Tope por corrida: USD %.2f" % _cap]:
+                    log("   " + l)
+                raise RuntimeError("Se cortó por gasto: USD %.2f supera el tope de USD %.2f"
+                                   % (real, _cap))
             ESTADO["paso"] = etiqueta
             ESTADO["paso_num"] = i
             log("▸ " + etiqueta)

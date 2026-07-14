@@ -83,7 +83,24 @@ def elegir(posts, cfg, top):
             if len(por_marca[p["marca"]]) < top:
                 por_marca[p["marca"]].append(p)
         cands = [p for lista in por_marca.values() for p in lista]
-    return cands, sorteos
+
+    # TECHO DURO: si la suma proyectada de comentarios pasa el máximo, se recortan los
+    # posteos (empezando por los MENOS comentados, que aportan menos señal por dólar)
+    # hasta entrar. Sin esto, una categoría viral baja decenas de miles y gasta cualquier cosa.
+    tope_post = conf["por_posteo"]
+    max_total = conf.get("max_comentarios_total", 999999)
+    cands.sort(key=lambda p: -p["comments"])
+    acum, recortados = 0, []
+    for p in cands:
+        n = min(p["comments"], tope_post)
+        if acum + n > max_total:
+            continue
+        acum += n
+        recortados.append(p)
+    if len(recortados) < len(cands):
+        print("  (techo de %d comentarios: se relevan %d posteos de %d; el resto queda fuera)"
+              % (max_total, len(recortados), len(cands)))
+    return recortados, sorteos
 
 
 def main():

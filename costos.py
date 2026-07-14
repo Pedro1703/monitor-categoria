@@ -87,5 +87,17 @@ def gasto_total():
     return round(sum(c["usd"] for c in libro["corridas"]), 2)
 
 
+def cantidad_registros():
+    """Cuántos gastos hay anotados. Sirve para marcar el inicio de una corrida."""
+    return len(_leer()["corridas"])
+
+
+def gasto_desde(indice):
+    """Gasto REAL acumulado desde un punto. Es el freno en vivo: no la estimación,
+    lo que efectivamente se gastó hasta ahora en esta corrida."""
+    libro = _leer()
+    return round(sum(c["usd"] for c in libro["corridas"][indice:]), 2)
+
+
 def historial():
     return _leer()["corridas"]

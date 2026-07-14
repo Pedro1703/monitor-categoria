@@ -487,6 +487,11 @@ function errorBox(c){
       p: "No se pudieron bajar los datos de redes: la cuenta de Apify agotó su crédito mensual.",
       a: "Contactá a <b>Pedro</b> para que recargue créditos en Apify o suba el plan."
     },
+    tope_superado: {
+      t: "Se cortó para no pasar el tope de gasto",
+      p: "La corrida se detuvo porque el gasto real superó el tope por corrida. Suele pasar cuando la categoría genera muchos más comentarios de lo estimado (contenido viral).",
+      a: "Lo ya scrapeado NO se pierde. Achicá el período o las marcas y volvé a intentar, o pedile a <b>Pedro</b> que suba el tope si de verdad hace falta."
+    },
     credencial_invalida: {
       t: "Una credencial fue rechazada",
       p: "El token de Apify o la API key de Claude no son válidos (pueden haber sido rotados).",
