@@ -178,6 +178,45 @@ def slide_ranking(prs, cliente, proyecto, etiqueta, titulo, filas, nota=""):
     return s
 
 
+def slide_nube(prs, cliente, proyecto, titulo, marca_dice, gente_dice, nota=""):
+    """Nube de palabras: lo que dice la marca vs. lo que le contesta la gente.
+
+    El tamaño codifica el peso TF-IDF (lo distintivo), no la frecuencia bruta.
+    """
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    _fondo(s, NEGRO)
+    _header(s, cliente, proyecto)
+    _etiqueta(s, "Vocabulario")
+    _texto(s, Inches(0.9), Inches(1.2), Inches(11.5), Inches(0.7),
+           titulo.upper(), 26, BLANCO, bold=True)
+
+    def nube(x, y, ancho, palabras, titulo_col, color):
+        _texto(s, x, y, ancho, Inches(0.4), titulo_col, 11, GRIS, bold=True)
+        cx, cy = x + Inches(0.05), y + Inches(0.55)
+        if not palabras:
+            _texto(s, cx, cy, ancho, Inches(0.4), "(sin datos)", 13, GRIS)
+            return
+        maxp = max(p["peso"] for p in palabras) or 1
+        linea_ancho = Emu(0)
+        for p in palabras[:14]:
+            size = 13 + (p["peso"] / maxp) * 19        # 13 a 32 pt
+            w = Emu(int(Inches(0.09) * len(p["w"]) * (size / 16.0)))
+            if linea_ancho + w > ancho:                # salto de línea
+                cx = x + Inches(0.05)
+                cy = cy + Inches(0.62)
+                linea_ancho = Emu(0)
+            _texto(s, cx, cy, w + Inches(0.4), Inches(0.55), p["w"], size, color,
+                   bold=(p["peso"] / maxp) > 0.55)
+            cx = cx + w + Inches(0.14)
+            linea_ancho = linea_ancho + w + Inches(0.14)
+
+    nube(Inches(0.9), Inches(2.2), Inches(5.4), marca_dice, "LO QUE DICE LA MARCA", LAVANDA)
+    nube(Inches(7.0), Inches(2.2), Inches(5.4), gente_dice, "LO QUE LE CONTESTA LA GENTE", BLANCO)
+    if nota:
+        _texto(s, Inches(0.9), Inches(6.4), Inches(11.5), Inches(0.8), nota, 12, GRIS)
+    return s
+
+
 def slide_cierre(prs, oportunidades):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _fondo(s, LAVANDA)
@@ -274,6 +313,97 @@ def build():
                                 "star": b["star"]} for x in m],
                               "Sobre %d comentarios relevantes. Sentimiento neto: %+d."
                               % (b["sent"]["relevantes"], b["sent"]["neto"]))
+
+    # ── 3.b Sentimiento: qué siente la gente, y validado con dos métodos
+    rep = {}
+    ruta_rep = os.path.join(HERE, "reporte_sentimiento.json")
+    if os.path.exists(ruta_rep):
+        rep = json.load(open(ruta_rep, encoding="utf-8"))
+
+    if rep and bse:
+        pm = rep["por_marca"]
+        con_muestra = [(m, d) for m, d in pm.items() if d["n"] >= 30]
+        if con_muestra:
+            slide_seccion(prs, "Qué siente\nla gente",
+                          "Medido dos veces, con dos métodos independientes.")
+            b_bse = pm.get(bse["n"], {})
+            if b_bse:
+                rival = max([(m, d) for m, d in con_muestra if m != bse["n"]],
+                            key=lambda x: x[1]["neto_llm"], default=None)
+                enf = ("%s le gana por %d puntos." % (rival[0], rival[1]["neto_llm"] - b_bse["neto_llm"])
+                       if rival and rival[1]["neto_llm"] > b_bse["neto_llm"]
+                       else "Es el mejor de la categoría.")
+                slide_dato(prs, cliente, proyecto, "Sentimiento neto",
+                           "%+d%%" % b_bse["neto_llm"],
+                           "de sentimiento neto en los comentarios de %s" % bse["n"],
+                           enf,
+                           "Sentimiento neto = positivos menos negativos, sobre %d comentarios "
+                           "relevantes. Un léxico rioplatense independiente da %+d%%: los dos "
+                           "métodos coinciden en el %d%% de los casos."
+                           % (b_bse["n"], b_bse["neto_lex"], b_bse["acuerdo"]))
+
+            slide_ranking(prs, cliente, proyecto, "Sentimiento",
+                          "Sentimiento neto por marca",
+                          [{"n": m, "v": max(d["neto_llm"], 0),
+                            "lab": "%+d%%  (n=%d)" % (d["neto_llm"], d["n"]),
+                            "star": m == bse["n"]}
+                           for m, d in sorted(con_muestra, key=lambda x: -x[1]["neto_llm"])],
+                          "Solo marcas con al menos 30 comentarios. Las demás no tienen muestra "
+                          "suficiente y mostrar un porcentaje sobre 5 comentarios sería inventar precisión.")
+
+            # La trampa que un léxico solo no ve: la ironía.
+            tramp = rep["acuerdo"].get("trampas_ironia", [])
+            if tramp:
+                s = prs.slides.add_slide(prs.slide_layouts[6])
+                _fondo(s, NEGRO)
+                _header(s, cliente, proyecto)
+                _etiqueta(s, "Cómo se midió")
+                _texto(s, Inches(0.9), Inches(1.3), Inches(11.5), Inches(1.0),
+                       "LA IRONÍA NO SE MIDE CONTANDO PALABRAS", 28, BLANCO, bold=True)
+                _texto(s, Inches(0.9), Inches(2.4), Inches(11.0), Inches(0.7),
+                       "Estos comentarios tienen solo palabras positivas. Son quejas.",
+                       19, LAVANDA, italic=True, font=SERIF)
+                y = Inches(3.4)
+                for t in tramp[:4]:
+                    _texto(s, Inches(0.9), y, Inches(11.3), Inches(0.6),
+                           "«%s»" % t["texto"][:105].replace("\n", " "), 14, BLANCO)
+                    _texto(s, Inches(0.9), y + Inches(0.38), Inches(11.3), Inches(0.3),
+                           t["marca"], 10, GRIS)
+                    y = y + Inches(0.85)
+                _texto(s, Inches(0.9), Inches(6.8), Inches(11.5), Inches(0.5),
+                       "Por eso se cruzan dos métodos: un léxico rioplatense (transparente) y un "
+                       "modelo de lenguaje (entiende contexto). Coinciden en el %d%%; el %d%% que "
+                       "discrepa se revisa a mano."
+                       % (rep["acuerdo"]["pct"], 100 - rep["acuerdo"]["pct"]), 11, GRIS)
+
+    # ── 3.c Nubes de palabras: la marca vs. la gente
+    if rep and rep.get("nube_marca"):
+        slide_seccion(prs, "Cómo habla\ncada uno",
+                      "Lo que dice la marca, y lo que le contesta la gente.")
+        nm, no_, ng = rep["nube_marca"], rep.get("nube_organica", {}), rep["nube_gente"]
+
+        if bse and bse["n"] in nm:
+            con = [x["w"] for x in nm[bse["n"]][:9]]
+            org = [x["w"] for x in no_.get(bse["n"], [])[:9]]
+            contaminada = len(set(con) - set(org))
+            slide_nube(prs, cliente, proyecto,
+                       "%s · su vocabulario más distintivo" % bse["n"],
+                       nm[bse["n"]][:12], ng.get(bse["n"], [])[:12],
+                       ("De los 9 términos que más lo diferencian de la competencia, %d salen de "
+                        "sus sorteos («comunicaremos», «solicitarles», «indicado»): lo que más "
+                        "distingue al %s es la letra chica de sus bases y condiciones, no su mensaje."
+                        % (contaminada, bse["n"])) if contaminada >= 4 else "")
+            if org:
+                slide_nube(prs, cliente, proyecto,
+                           "%s · su voz real, sin los sorteos" % bse["n"],
+                           no_.get(bse["n"], [])[:12], ng.get(bse["n"], [])[:12],
+                           "Sacando los sorteos aparece el vocabulario con el que el %s "
+                           "construye marca todos los días." % bse["n"])
+
+        # Los competidores con conversación real
+        for m in [x for x in ng if x != (bse["n"] if bse else "") and len(ng.get(x, [])) >= 5][:2]:
+            slide_nube(prs, cliente, proyecto, "%s · marca y público" % m,
+                       nm.get(m, [])[:12], ng.get(m, [])[:12], "")
 
     # ── 4. Los que hablan solos
     mudos = [b for b in activas if b["posts"] >= 100 and b["sov_eng"] < 3]
