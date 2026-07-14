@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de categoría · Ciudadana</title>
+<style>
+  :root{
+    --bg:#000; --surface:#0E0E10; --surface-2:#161619; --line:#26262B;
+    --lav:#C4B5E8; --lav-dim:#C4B5E822;
+    --ink:#fff; --ink-2:#A8A8B0; --ink-3:#6E6E78;
+    --ok:#7BE0A8; --warn:#FFB86B; --bad:#FF7A6B;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Helvetica Neue",-apple-system,BlinkMacSystemFont,sans-serif;
+       font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:34px 24px 90px}
+  em{font-family:Georgia,serif;font-style:italic;color:var(--lav)}
+
+  header{display:flex;align-items:center;gap:16px;padding-bottom:22px;
+         border-bottom:1px solid var(--line);margin-bottom:34px}
+  header img{height:17px;width:auto}
+  header .t{margin-left:auto;font-size:12px;color:var(--ink-3)}
+
+  h1{font-size:38px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em}
+  .lead{font-family:Georgia,serif;font-style:italic;color:var(--lav);
+        font-size:19px;margin:0 0 34px}
+
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+        padding:22px;margin-bottom:14px}
+  .step.off{opacity:.45;pointer-events:none}
+  .step h2{font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+           color:var(--ink-3);margin:0 0 3px;font-weight:700}
+  .step .h{font-size:19px;font-weight:700;margin:0 0 16px}
+  .n{display:inline-flex;width:21px;height:21px;border-radius:50%;background:var(--lav);
+     color:#000;font-size:11px;font-weight:800;align-items:center;justify-content:center;
+     margin-right:9px;vertical-align:2px}
+
+  label{display:block;font-size:12px;color:var(--ink-3);margin:0 0 6px;
+        text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+  input[type=text],input[type=password],select{
+      width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;
+      color:var(--ink);padding:11px 13px;font-size:14px;font-family:inherit}
+  input:focus,select:focus{outline:none;border-color:var(--lav)}
+
+  .cuentas{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  .cuenta{display:grid;grid-template-columns:24px 1.1fr 1fr 1fr 30px;gap:8px;align-items:center}
+  .cuenta input{padding:9px 11px;font-size:13px}
+  .star{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);
+        background:transparent;color:var(--ink-3);cursor:pointer;font-size:12px;
+        display:flex;align-items:center;justify-content:center;padding:0}
+  .star.on{background:var(--lav);color:#000;border-color:var(--lav);font-weight:800}
+  .del{background:none;border:0;color:var(--ink-3);cursor:pointer;font-size:17px;padding:0}
+  .del:hover{color:var(--bad)}
+  .hint{font-size:11px;color:var(--ink-3);margin-top:8px}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);border-radius:999px;padding:8px 15px;font-size:13px;
+        cursor:pointer;background:transparent;color:var(--ink-2);font-family:inherit}
+  .chip.on{background:var(--lav);color:#000;border-color:var(--lav);font-weight:700}
+  .chip.off{opacity:.4;cursor:not-allowed}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+
+  button.go{background:var(--lav);color:#000;border:0;border-radius:10px;
+            padding:14px 26px;font-size:15px;font-weight:800;cursor:pointer;
+            font-family:inherit;letter-spacing:.02em}
+  button.go:disabled{opacity:.35;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--line);
+               border-radius:10px;padding:13px 22px;font-size:14px;cursor:pointer;font-family:inherit}
+  button.ghost:hover{border-color:var(--lav);color:var(--ink)}
+
+  .cred{display:flex;align-items:center;gap:10px;font-size:13px;padding:9px 0}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .dot.ok{background:var(--ok)} .dot.no{background:var(--bad)} .dot.opt{background:var(--warn)}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-3)}
+
+  .costo{background:var(--lav);color:#000;border-radius:14px;padding:24px;margin-top:6px}
+  .costo .big{font-size:46px;font-weight:800;line-height:1;margin:4px 0 10px}
+  .costo table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+  .costo td{padding:6px 0;border-top:1px solid #00000022}
+  .costo td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  .costo .nota{font-size:12px;margin-top:14px;font-family:Georgia,serif;font-style:italic}
+
+  .log{background:#000;border:1px solid var(--line);border-radius:10px;padding:14px;
+       font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-2);
+       max-height:250px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
+  .paso{display:flex;align-items:center;gap:11px;font-size:15px;margin-bottom:14px}
+  .spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--lav);
+        border-radius:50%;animation:g .8s linear infinite;flex:none}
+  @keyframes g{to{transform:rotate(360deg)}}
+
+  .res{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  .alerta{font-size:14px;padding:11px 14px;border-radius:9px;background:var(--surface-2);
+          border-left:3px solid var(--line);margin-bottom:7px}
+  .alerta.pos{border-left-color:var(--ok)} .alerta.neg{border-left-color:var(--bad)}
+  a.dl{display:inline-block;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <img src="/logo.png" alt="Ciudadana">
+    <div class="t">Herramienta interna</div>
+  </header>
+
+  <h1>Monitor de categoría</h1>
+  <p class="lead">Qué dicen las marcas, qué contesta la gente, y dónde no hay nadie.</p>
+
+  <!-- 1 · credenciales -->
+  <div class="step" id="s1">
+    <h2>Paso 1</h2>
+    <div class="h"><span class="n">1</span>Credenciales</div>
+    <div id="creds"></div>
+    <div id="credform" style="display:none;margin-top:14px">
+      <div class="grid2">
+        <div>
+          <label>Token de Apify</label>
+          <input type="password" id="k_apify" placeholder="apify_api_…">
+          <div class="hint"><a href="https://console.apify.com/settings/integrations" target="_blank" style="color:var(--lav)">Sacarlo acá →</a></div>
+        </div>
+        <div>
+          <label>API key de Claude <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+          <input type="password" id="k_claude" placeholder="sk-ant-…">
+          <div class="hint"><a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--lav)">Sacarla acá →</a> · sin esto no hay sentimiento</div>
+        </div>
+      </div>
+      <div style="margin-top:14px"><button class="go" onclick="guardarCreds()">Guardar</button></div>
+      <div class="hint">Se guardan en un archivo <span class="mono">.env</span> de esta carpeta, que no se sube a GitHub. Se configuran una sola vez.</div>
+    </div>
+    <div style="margin-top:12px"><button class="ghost" id="btnCred" onclick="toggleCred()">Cambiar credenciales</button></div>
+  </div>
+
+  <!-- 2 · qué trackear -->
+  <div class="step" id="s2">
+    <h2>Paso 2</h2>
+    <div class="h"><span class="n">2</span>Qué querés trackear</div>
+
+    <label>Cuentas</label>
+    <div class="cuentas" id="cuentas"></div>
+    <button class="ghost" onclick="addCuenta()">+ Agregar marca</button>
+    <div class="hint">El círculo marca la <b>marca protagonista</b>: contra ella se compara todo. Poné el handle sin la @. Dejá vacío lo que no aplique.</div>
+
+    <div style="margin-top:24px" class="grid2">
+      <div>
+        <label>Redes</label>
+        <div class="chips">
+          <button class="chip on" data-red="ig" onclick="tog(this)">Instagram</button>
+          <button class="chip on" data-red="fb" onclick="tog(this)">Facebook</button>
+          <button class="chip off" data-red="tt" title="Ninguna aseguradora uruguaya tiene cuenta">TikTok</button>
+        </div>
+      </div>
+      <div>
+        <label>Período</label>
+        <select id="dias">
+          <option value="90">Últimos 3 meses</option>
+          <option value="180">Últimos 6 meses</option>
+          <option value="365" selected>Último año</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      <label>Comentarios de la gente</label>
+      <div class="chips">
+        <button class="chip on" id="chCom" onclick="tog(this)">Bajar y analizar comentarios</button>
+        <button class="chip on" id="chIA" onclick="tog(this)">Leer el sentimiento con IA</button>
+      </div>
+      <div class="hint">Los posteos de sorteo se excluyen automáticamente: sus comentarios son «@fulano vamos!!» y no son opinión.</div>
+    </div>
+
+    <div style="margin-top:26px">
+      <button class="go" onclick="estimar()">Estimar el costo →</button>
+    </div>
+  </div>
+
+  <!-- 3 · costo -->
+  <div class="step off" id="s3">
+    <h2>Paso 3</h2>
+    <div class="h"><span class="n">3</span>Cuánto va a costar</div>
+    <div id="costo"></div>
+  </div>
+
+  <!-- 4 · corrida -->
+  <div class="step off" id="s4">
+    <h2>Paso 4</h2>
+    <div class="h"><span class="n">4</span>Resultado</div>
+    <div id="run"></div>
+  </div>
+
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const NF = new Intl.NumberFormat("es-UY");
+let ESTADO = null, ULT = null;
+
+function tog(b){ if(!b.classList.contains("off")) b.classList.toggle("on"); }
+const redes = () => [...document.querySelectorAll('.chip[data-red].on')].map(b => b.dataset.red);
+
+// ── cuentas
+function filaCuenta(c = {}){
+  const d = document.createElement("div");
+  d.className = "cuenta";
+  d.innerHTML = `
+    <button class="star ${c.star ? "on" : ""}" title="Marca protagonista" onclick="setStar(this)">★</button>
+    <input type="text" placeholder="Marca" value="${esc(c.n || "")}" data-f="n">
+    <input type="text" placeholder="instagram" value="${esc(c.ig || "")}" data-f="ig">
+    <input type="text" placeholder="facebook" value="${esc(c.fb || "")}" data-f="fb">
+    <button class="del" onclick="this.parentNode.remove()">×</button>`;
+  $("#cuentas").appendChild(d);
+}
+function addCuenta(){ filaCuenta(); }
+function setStar(b){
+  document.querySelectorAll(".star").forEach(s => s.classList.remove("on"));
+  b.classList.add("on");
+}
+function leerCuentas(){
+  return [...document.querySelectorAll(".cuenta")].map(r => {
+    const g = (f) => r.querySelector(`[data-f=${f}]`).value.trim().replace(/^@/, "");
+    return { n: g("n"), ig: g("ig") || null, fb: g("fb") || null, tt: null,
+             star: r.querySelector(".star").classList.contains("on") };
+  }).filter(c => c.n);
+}
+
+// ── credenciales
+function pintarCreds(cr){
+  $("#creds").innerHTML = Object.entries(cr).map(([k, v]) => {
+    const cls = v.configurada ? "ok" : (v.requerida ? "no" : "opt");
+    const txt = v.configurada ? `<span class="mono">${esc(v.hint)}</span>`
+              : (v.requerida ? "falta — es obligatoria" : "falta — opcional, sin esto no hay sentimiento");
+    return `<div class="cred"><span class="dot ${cls}"></span>
+      <b>${k === "APIFY_TOKEN" ? "Apify" : "Claude"}</b>
+      <span style="color:var(--ink-3)">${esc(v.desc)}</span>
+      <span style="margin-left:auto">${txt}</span></div>`;
+  }).join("");
+  const falta = !cr.APIFY_TOKEN.configurada;
+  $("#credform").style.display = falta ? "block" : "none";
+  $("#btnCred").style.display = falta ? "none" : "inline-block";
+  $("#s2").classList.toggle("off", falta);
+}
+function toggleCred(){
+  const f = $("#credform");
+  f.style.display = f.style.display === "none" ? "block" : "none";
+}
+async function guardarCreds(){
+  const body = {};
+  if ($("#k_apify").value.trim())  body.APIFY_TOKEN = $("#k_apify").value.trim();
+  if ($("#k_claude").value.trim()) body.ANTHROPIC_API_KEY = $("#k_claude").value.trim();
+  const r = await fetch("/api/credenciales", {method:"POST", body:JSON.stringify(body)});
+  const d = await r.json();
+  $("#k_apify").value = ""; $("#k_claude").value = "";
+  pintarCreds(d.credenciales);
+}
+
+// ── estimación
+async function estimar(){
+  const cuentas = leerCuentas();
+  if (!cuentas.length) return alert("Agregá al menos una marca.");
+  if (!cuentas.some(c => c.star)) return alert("Marcá cuál es la marca protagonista (el círculo ★).");
+
+  ULT = { cuentas, redes: redes(), dias: +$("#dias").value,
+          comentarios: $("#chCom").classList.contains("on"),
+          ia: $("#chIA").classList.contains("on") };
+
+  const r = await fetch("/api/estimar", {method:"POST", body:JSON.stringify(ULT)});
+  const e = await r.json();
+
+  const com = e.comentarios;
+  const filas = [
+    ["Posteos de Instagram", NF.format(e.posts_ig)],
+    ["Posteos de Facebook", NF.format(e.posts_fb)],
+  ];
+  if (ULT.comentarios){
+    filas.push(["Comentarios (sin sorteos)", NF.format(com.n)]);
+    if (ULT.ia) filas.push(["Clasificación con IA", "USD " + com.clasif.toFixed(2)]);
+  }
+
+  $("#costo").innerHTML = `
+    <div class="costo">
+      <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700">Costo estimado</div>
+      <div class="big">USD ${e.costo_total.toFixed(2)}</div>
+      <div style="font-size:14px">${ULT.dias} días · ${ULT.cuentas.length} marcas · ${ULT.redes.join(" + ").toUpperCase()}</div>
+      <table>${filas.map(f => `<tr><td>${f[0]}</td><td>${f[1]}</td></tr>`).join("")}</table>
+      <div class="nota">
+        ${e.hay_historico
+          ? "Estimado con la cadencia real de la última corrida — no es un supuesto."
+          : "Primera corrida: la cadencia es un supuesto (2,5 posteos/semana por marca). El costo real puede variar."}
+        ${com.real ? `<br>Los ${NF.format(com.n)} comentarios son el número exacto: ya sabemos cuántos hay.` : ""}
+        ${com.sorteos_excluidos ? `<br><b>Se excluyen ${NF.format(com.sorteos_excluidos)} comentarios de sorteos</b> — son etiquetas a amigos, no opinión. Bajarlos costaría USD ${(com.sorteos_excluidos/1000*2.3).toFixed(0)} de más.` : ""}
+      </div>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:10px">
+      <button class="go" onclick="correr()">Confirmar y correr →</button>
+      <button class="ghost" onclick="$('#s3').classList.add('off')">Cancelar</button>
+    </div>`;
+  $("#s3").classList.remove("off");
+  $("#s3").scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+// ── corrida
+async function correr(){
+  const r = await fetch("/api/correr", {method:"POST", body:JSON.stringify(ULT)});
+  const d = await r.json();
+  if (d.error) return alert(d.error);
+  $("#s4").classList.remove("off");
+  $("#s3").classList.add("off");
+  $("#s4").scrollIntoView({behavior:"smooth", block:"center"});
+  poll();
+}
+
+async function poll(){
+  const r = await fetch("/api/estado");
+  const d = await r.json();
+  ESTADO = d;
+  if (!$("#creds").innerHTML) pintarCreds(d.credenciales);
+  const c = d.corrida;
+
+  if (c.corriendo || c.log.length){
+    $("#run").innerHTML = `
+      <div class="paso">
+        ${c.corriendo ? '<span class="spin"></span>' : (c.error ? "✗" : "✓")}
+        <b>${esc(c.paso || "")}</b>
+      </div>
+      <div class="log">${c.log.map(esc).join("\n")}</div>
+      ${c.error ? `<div class="alerta neg" style="margin-top:14px">${esc(c.error)}</div>` : ""}
+      ${c.fin ? resultado(c.fin) : ""}`;
+    const lg = document.querySelector(".log"); if (lg) lg.scrollTop = lg.scrollHeight;
+  }
+  if (c.corriendo) setTimeout(poll, 1200);
+}
+
+function resultado(f){
+  return `
+    <div style="margin-top:22px">
+      <div style="font-size:14px;color:var(--ink-3);margin-bottom:12px">
+        ${NF.format(f.posts)} posteos · ${NF.format(f.comentarios)} comentarios · ${f.marcas} marcas
+      </div>
+      ${f.alertas.map(a => `<div class="alerta ${a.lvl}">${esc(a.t)}</div>`).join("")}
+      <div class="res">
+        <a class="dl" href="/tablero" target="_blank"><button class="go">Ver el tablero →</button></a>
+        ${f.ppt ? '<a class="dl" href="/descargar/ppt"><button class="ghost">Descargar el PPT</button></a>' : ""}
+      </div>
+    </div>`;
+}
+
+// ── arranque
+(async () => {
+  const r = await fetch("/api/estado");
+  const d = await r.json();
+  pintarCreds(d.credenciales);
+  (d.cuentas.length ? d.cuentas : [{}, {}, {}]).forEach(filaCuenta);
+  if (d.corrida.log.length) { $("#s4").classList.remove("off"); poll(); }
+})();
+</script>
+</body>
+</html>

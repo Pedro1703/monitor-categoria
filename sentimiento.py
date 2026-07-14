@@ -74,6 +74,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(HERE, "raw")
 CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
 
+sys.path.insert(0, HERE)
+import config_local
+config_local.cargar()   # lee el .env: las keys se configuran una vez
+
 LOTE = 60           # comentarios por llamada
 MUESTRA_VALID = 60  # comentarios para la validación / auditoría
 

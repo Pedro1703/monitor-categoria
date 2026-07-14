@@ -33,6 +33,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
 RAW_DIR = os.path.join(HERE, "raw")
 
+sys.path.insert(0, HERE)
+import config_local
+config_local.cargar()   # lee el .env: las keys se configuran una vez
+
 APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "").strip()
 API = "https://api.apify.com/v2"
 

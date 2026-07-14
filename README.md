@@ -15,34 +15,35 @@ solo archivo — `monitor.config.json`.
 
 ## Empezar
 
-Necesitás Python 3 y un token de [Apify](https://console.apify.com/account/integrations)
-(el plan gratuito alcanza — ver *Costo*).
-
 ```bash
 git clone https://github.com/Pedro1703/monitor-categoria.git
 cd monitor-categoria
-
-export APIFY_TOKEN=apify_api_xxxxx
-python3 fetch_apify.py     # trae los posteos (5-15 min)
-python3 analyze.py         # calcula las métricas (instantáneo)
-open index.html            # el tablero
+python3 app.py          # o doble clic en Abrir_Monitor.command
 ```
 
-En Mac también podés hacer **doble clic en `correr.command`** y hace los tres pasos solo,
-pidiéndote el token si no lo tenés puesto.
+Se abre una app en tu navegador. Ahí:
 
-No hay que instalar dependencias: el monitor corre con la librería estándar de Python.
+1. **Pegás las credenciales una sola vez** (Apify, y Claude si querés sentimiento). Quedan
+   guardadas en un `.env` local que **no se sube a GitHub**. No te las vuelve a pedir nunca.
+2. **Elegís qué trackear**: las cuentas, las redes, el período, y si querés comentarios.
+3. **Te dice cuánto va a costar** — antes de gastar un peso. Confirmás o cancelás.
+4. Corre, y te deja **el tablero** y **el PPT en brand Ciudadana** listo para presentar.
 
-### Opciones
+Todo corre en tu máquina: los datos de la categoría nunca salen de tu compu.
+
+### Desde la terminal, si preferís
 
 ```bash
-python3 fetch_apify.py --dias 180    # media ventana = mitad de costo
-python3 fetch_apify.py --redes ig    # solo Instagram
-python3 analyze.py --ia              # clasifica territorios con Claude (necesita ANTHROPIC_API_KEY)
+python3 fetch_apify.py --dias 180     # baja posteos
+python3 fetch_comments.py --estimar   # cuántos comentarios hay y cuánto salen (no gasta)
+python3 fetch_comments.py             # los baja
+python3 sentimiento.py --validar      # sentimiento + motivo, con validación
+python3 analyze.py                    # métricas
+python3 informe_ppt.py                # el PPT
 ```
 
-El crudo queda cacheado en `raw/`. **Re-correr `analyze.py` no cuesta nada**: podés cambiar el
-lexicón, probar `--ia` o ajustar métricas sin volver a pagar scraping.
+El crudo queda cacheado en `raw/`. **Re-analizar no cuesta nada**: podés cambiar el lexicón o
+rehacer el PPT sin volver a pagar scraping.
 
 ---
 

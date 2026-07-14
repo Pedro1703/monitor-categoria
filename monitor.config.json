@@ -42,72 +42,63 @@
       "star": true,
       "ig": "bseuruguay",
       "fb": "BSEuruguay",
-      "tt": null,
-      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026). TikTok: no se encontró cuenta oficial — la categoría entera está ausente de TikTok (ver _nota_tiktok)."
+      "tt": null
     },
     {
       "n": "Mapfre",
       "star": false,
       "ig": "mapfre.uy",
       "fb": "segurosmapfreuruguay",
-      "tt": null,
-      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026)."
+      "tt": null
     },
     {
       "n": "SURA",
       "star": false,
       "ig": "segurossurauy",
       "fb": "SegurosSURAUruguay",
-      "tt": null,
-      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026). Existe también @segurossurauru (IG, aparentemente secundaria) y @SegurosSURAuy en X/Twitter."
+      "tt": null
     },
     {
       "n": "San Cristóbal",
       "star": false,
       "ig": "sancristobaluy",
       "fb": "sancristobaluy",
-      "tt": null,
-      "_handles_verificados": "IG y FB confirmados (cuenta Uruguay, no confundir con @sancristobalseg / sancristobalok de Argentina)."
+      "tt": null
     },
     {
       "n": "Porto Seguro",
       "star": false,
       "ig": "portoseguro_uruguay",
       "fb": null,
-      "tt": null,
-      "_handles_verificados": "IG ya verificado en el Radar de Categoría."
+      "tt": null
     },
     {
       "n": "HDI",
       "star": false,
       "ig": null,
       "fb": null,
-      "tt": null,
-      "_handles_verificados": "SIN cuenta de Instagram (jul 2026): Apify devuelve not_found en @hdisegurosuy y variantes. Contexto: Talanx vendió HDI Seguros Uruguay a BARBUSS, la marca está en transición y bajó su cuenta. No es un handle mal escrito — es una marca saliendo."
+      "tt": null
     },
     {
       "n": "MetLife",
       "star": false,
       "ig": "metlife_uruguay",
       "fb": "MetLifeUruguay",
-      "tt": null,
-      "_handles_verificados": "IG y FB confirmados por búsqueda web (jul 2026)."
+      "tt": null
     },
     {
       "n": "Surco",
       "star": false,
       "ig": "surcoseguros",
       "fb": null,
-      "tt": null,
-      "_handles_verificados": "IG ya verificado en el Radar de Categoría."
+      "tt": null
     },
     {
       "n": "Zurich Santander",
       "star": false,
       "ig": null,
       "fb": null,
-      "tt": null,
-      "_handles_verificados": "SIN cuenta propia en Uruguay: comunica por el canal del banco (Santander). Se deja en el monitor como ausencia deliberada — es un hallazgo, no un dato faltante."
+      "tt": null
     }
   ],
   "territorios": {

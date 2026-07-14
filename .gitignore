@@ -1,11 +1,12 @@
-# ── DATOS: nunca se suben. El repo es público; la data de la categoría no.
+# ── SECRETOS: jamás al repo (es público)
+.env
+*.token
+
+# ── DATOS de la categoría: el repo es código, no data
 raw/
 monitor.json
 monitor.data.js
-
-# ── SECRETOS
-.env
-*.token
+Informe_Ciudadana.pptx
 
 # ── Ruido
 __pycache__/
