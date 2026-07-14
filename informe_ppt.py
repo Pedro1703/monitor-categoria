@@ -20,6 +20,9 @@ UNA lectura. Los números completos viven en el tablero, que es donde se explora
 import os, sys, json
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import logos
+
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
@@ -49,10 +52,12 @@ def _fondo(slide, color):
 
 
 def _texto(slide, x, y, w, h, texto, size, color, *, bold=False, italic=False,
-           font=SANS, align=PP_ALIGN.LEFT, espaciado=None):
+           font=SANS, align=PP_ALIGN.LEFT, espaciado=None, wrap=True):
     tb = slide.shapes.add_textbox(x, y, w, h)
     tf = tb.text_frame
-    tf.word_wrap = True
+    # wrap=False para números y etiquetas cortas: si el textbox es más angosto que el
+    # texto, PowerPoint lo parte en vertical ("01" queda 0 arriba y 1 abajo). Pasó.
+    tf.word_wrap = wrap
     tf.vertical_anchor = MSO_ANCHOR.TOP
     p = tf.paragraphs[0]
     p.alignment = align
@@ -184,61 +189,63 @@ def slide_ranking(prs, cliente, proyecto, etiqueta, titulo, filas, nota=""):
     y = Inches(2.4)
     alto, gap = Inches(0.34), Inches(0.16)
     maxv = max([f["v"] for f in filas] + [1])
-    ancho_max = Inches(7.2)
+    ancho_max = Inches(6.6)
     for f in filas:
-        _texto(s, Inches(0.9), y - Inches(0.06), Inches(2.2), Inches(0.35),
-               f["n"], 12, BLANCO if f.get("star") else GRIS, bold=f.get("star", False))
+        # El logo de la marca, si lo tenemos (viene de su foto de perfil, en círculo).
+        lg = logos.ruta(f["n"]) if f.get("logo", True) else None
+        if lg:
+            s.shapes.add_picture(lg, Inches(0.9), y - Inches(0.03), height=Inches(0.4))
+        _texto(s, Inches(1.45) if lg else Inches(0.9), y - Inches(0.06), Inches(2.3),
+               Inches(0.35), f["n"], 12, BLANCO if f.get("star") else GRIS,
+               bold=f.get("star", False), wrap=False)
         w = Emu(int(ancho_max * (f["v"] / maxv))) if f["v"] > 0 else Emu(1000)
-        bar = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(3.2), y, w, alto)
+        bar = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(3.9), y, w, alto)
         bar.fill.solid()
         bar.fill.fore_color.rgb = LAVANDA if f.get("star") else RGBColor(0x3A, 0x3A, 0x3A)
         bar.line.fill.background()
         bar.adjustments[0] = 0.25
         bar.text_frame.text = ""
-        _texto(s, Inches(10.6), y - Inches(0.06), Inches(2.2), Inches(0.35),
-               f["lab"], 12, BLANCO if f.get("star") else GRIS, bold=f.get("star", False))
+        _texto(s, Inches(10.7), y - Inches(0.06), Inches(2.3), Inches(0.35),
+               f["lab"], 12, BLANCO if f.get("star") else GRIS, bold=f.get("star", False),
+               wrap=False)
         y = y + alto + gap
     if nota:
         _nota(s, nota)
     return s
 
 
-def slide_nube(prs, cliente, proyecto, titulo, marca_dice, gente_dice, lectura="", nota=""):
-    """Nube de palabras: lo que dice la marca vs. lo que le contesta la gente.
+def slide_nube(prs, cliente, proyecto, titulo, img, top, lectura="", nota="", color=LAVANDA):
+    """Nube de palabras de los comentarios. La imagen la arma el renderer de wordcloud.
 
-    El tamaño codifica el peso TF-IDF (lo distintivo), no la frecuencia bruta.
+    Nada de posicionar palabras a mano: eso fue lo que se rompía y se superponía. El
+    layout lo resuelve un algoritmo de empaquetado y acá solo se pega el PNG.
     """
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _fondo(s, NEGRO)
     _header(s, cliente, proyecto)
-    _etiqueta(s, "Vocabulario")
-    _texto(s, Inches(0.9), Inches(1.2), Inches(11.5), Inches(0.7),
-           titulo.upper(), 26, BLANCO, bold=True)
+    _etiqueta(s, "Qué dice la gente")
+    _texto(s, Inches(0.9), Inches(1.15), Inches(11.5), Inches(0.6),
+           titulo.upper(), 24, BLANCO, bold=True)
 
-    def nube(x, y, ancho, palabras, titulo_col, color):
-        _texto(s, x, y, ancho, Inches(0.4), titulo_col, 11, GRIS, bold=True)
-        cx, cy = x + Inches(0.05), y + Inches(0.55)
-        if not palabras:
-            _texto(s, cx, cy, ancho, Inches(0.4), "(sin datos)", 13, GRIS)
-            return
-        maxp = max(p["peso"] for p in palabras) or 1
-        linea_ancho = Emu(0)
-        for p in palabras[:14]:
-            size = 13 + (p["peso"] / maxp) * 19        # 13 a 32 pt
-            w = Emu(int(Inches(0.09) * len(p["w"]) * (size / 16.0)))
-            if linea_ancho + w > ancho:                # salto de línea
-                cx = x + Inches(0.05)
-                cy = cy + Inches(0.62)
-                linea_ancho = Emu(0)
-            _texto(s, cx, cy, w + Inches(0.4), Inches(0.55), p["w"], size, color,
-                   bold=(p["peso"] / maxp) > 0.55)
-            cx = cx + w + Inches(0.14)
-            linea_ancho = linea_ancho + w + Inches(0.14)
+    if img and os.path.exists(img):
+        # Se dimensiona por ALTURA: el ancho lo deduce el aspect ratio. Si se fijara el
+        # ancho, una nube más alta se comería la nota metodológica del pie — pasó.
+        s.shapes.add_picture(img, Inches(0.75), Inches(1.75), height=Inches(4.05))
 
-    nube(Inches(0.9), Inches(2.1), Inches(5.4), marca_dice, "LO QUE DICE LA MARCA", LAVANDA)
-    nube(Inches(7.0), Inches(2.1), Inches(5.4), gente_dice, "LO QUE LE CONTESTA LA GENTE", BLANCO)
+    # Ranking a la derecha: la nube impacta, la lista se lee. Van juntas.
+    if top:
+        _texto(s, Inches(9.75), Inches(1.9), Inches(2.9), Inches(0.35),
+               "LAS MÁS REPETIDAS", 10, GRIS, bold=True)
+        y = Inches(2.4)
+        maxn = max(t["n"] for t in top) or 1
+        for t in top[:10]:
+            _texto(s, Inches(9.75), y, Inches(2.2), Inches(0.3), t["w"], 13, color, wrap=False)
+            _texto(s, Inches(12.05), y, Inches(0.6), Inches(0.3), str(t["n"]), 13, GRIS,
+                   align=PP_ALIGN.RIGHT, wrap=False)
+            y = y + Inches(0.36)
+
     if lectura:
-        _texto(s, Inches(0.9), Inches(5.85), Inches(11.5), Inches(0.8), lectura, 12, GRIS)
+        _texto(s, Inches(0.9), Inches(6.05), Inches(11.5), Inches(0.45), lectura, 11, GRIS)
     if nota:
         _nota(s, nota)
     return s
@@ -249,13 +256,14 @@ def slide_cierre(prs, oportunidades):
     _fondo(s, LAVANDA)
     _texto(s, Inches(0.9), Inches(0.9), Inches(11.5), Inches(1.0),
            "DÓNDE ESTÁ EL ESPACIO", 44, NEGRO, bold=True)
-    y = Inches(2.3)
+    y = Inches(2.2)
     for i, o in enumerate(oportunidades, 1):
-        _texto(s, Inches(0.9), y, Inches(0.6), Inches(0.7), "0%d" % i, 26, NEGRO, bold=True)
-        _texto(s, Inches(1.7), y, Inches(10.6), Inches(0.6), o["t"], 17, NEGRO, bold=True)
-        _texto(s, Inches(1.7), y + Inches(0.42), Inches(10.6), Inches(0.6),
+        _texto(s, Inches(0.9), y - Inches(0.05), Inches(1.1), Inches(0.7),
+               "0%d" % i, 26, NEGRO, bold=True, wrap=False)
+        _texto(s, Inches(2.0), y, Inches(10.3), Inches(0.5), o["t"], 17, NEGRO, bold=True)
+        _texto(s, Inches(2.0), y + Inches(0.4), Inches(10.3), Inches(0.6),
                o["d"], 14, NEGRO, italic=True, font=SERIF)
-        y = y + Inches(1.15)
+        y = y + Inches(1.2)
     return s
 
 
@@ -337,10 +345,17 @@ def build():
         "la ironía, que un conteo de palabras no puede detectar.")
 
     M_NUBE = (
-        "Metodología · Vocabulario distintivo por TF-IDF, no por frecuencia bruta: se pondera lo que "
-        "una marca dice mucho y las demás dicen poco. Un conteo simple daría los términos comunes de "
-        "la categoría («seguro», «cobertura») y no distinguiría nada. El tamaño de cada palabra es su "
-        "peso distintivo. Izquierda: los posteos de la marca. Derecha: los comentarios de su público.")
+        "Metodología · Nube de frecuencia sobre los comentarios del público (no sobre los posteos de "
+        "la marca): el tamaño de cada palabra es cuántas veces la gente la escribió. Sobre %d "
+        "comentarios relevantes. Se excluyen los comentarios de posteos de sorteo, las respuestas de "
+        "la propia marca, las @menciones, las palabras vacías (verbos y conectores sin contenido) y "
+        "el nombre de la marca. Layout de empaquetado, sin superposiciones.")
+
+    M_NUBE_NEG = (
+        "Metodología · Solo las palabras de los comentarios clasificados como NEGATIVOS. El tamaño es "
+        "la frecuencia. La clasificación de sentimiento se hace con dos métodos independientes (un "
+        "léxico de español rioplatense y un modelo de lenguaje) que coinciden en el 71% de los casos; "
+        "los desacuerdos se revisan a mano.")
 
     M_TERRITORIOS = (
         "Metodología · Cada posteo se asigna al territorio de comunicación con el que más coincide, "
@@ -465,36 +480,38 @@ def build():
                     y = y + Inches(0.85)
                 _nota(s, M_IRONIA % (rep["acuerdo"]["pct"], 100 - rep["acuerdo"]["pct"]))
 
-    # ── 3.c Nubes de palabras: la marca vs. la gente
-    if rep and rep.get("nube_marca"):
-        slide_seccion(prs, "Cómo habla\ncada uno",
-                      "Lo que dice la marca, y lo que le contesta la gente.")
-        nm, no_, ng = rep["nube_marca"], rep.get("nube_organica", {}), rep["nube_gente"]
+    # ── 3.c Nubes de palabras: QUÉ DICE LA GENTE de cada marca
+    #
+    # Son de los COMENTARIOS, no de los posteos: el tamaño de cada palabra es cuántas
+    # veces el público la escribió. La imagen la arma el renderer de wordcloud (layout
+    # empaquetado, sin solapes); acá solo se pega el PNG y se lista el top al costado.
+    nubes_path = os.path.join(HERE, "nubes.json")
+    if os.path.exists(nubes_path):
+        NB = json.load(open(nubes_path, encoding="utf-8"))
+        if NB:
+            slide_seccion(prs, "Qué dice\nla gente",
+                          "Las palabras que el público más repite en los comentarios.")
 
-        if bse and bse["n"] in nm:
-            con = [x["w"] for x in nm[bse["n"]][:9]]
-            org = [x["w"] for x in no_.get(bse["n"], [])[:9]]
-            contaminada = len(set(con) - set(org))
-            slide_nube(prs, cliente, proyecto,
-                       "%s · su vocabulario más distintivo" % bse["n"],
-                       nm[bse["n"]][:12], ng.get(bse["n"], [])[:12],
-                       lectura=(("De los 9 términos que más lo diferencian de la competencia, %d salen "
-                                 "de sus sorteos: lo que más distingue al %s es la letra chica de sus "
-                                 "bases y condiciones, no su mensaje." % (contaminada, bse["n"]))
-                                if contaminada >= 4 else ""),
-                       nota=M_NUBE)
-            if org:
+            orden = sorted(NB.items(), key=lambda x: -x[1]["n"])
+            for m, info in orden:
+                if info["n"] < 30:
+                    continue          # muestra chica: la nube sería anecdótica
+                es_bse = bool(bse and m == bse["n"])
+
                 slide_nube(prs, cliente, proyecto,
-                           "%s · su voz real, sin los sorteos" % bse["n"],
-                           no_.get(bse["n"], [])[:12], ng.get(bse["n"], [])[:12],
-                           lectura="Sacando los sorteos aparece el vocabulario con el que el %s "
-                                   "construye marca todos los días." % bse["n"],
-                           nota=M_NUBE)
+                           "%s · lo que más repite su público" % m,
+                           info.get("todas"), info.get("top", []),
+                           lectura="", nota=M_NUBE % info["n"],
+                           color=LAVANDA if es_bse else BLANCO)
 
-        # Los competidores con conversación real
-        for m in [x for x in ng if x != (bse["n"] if bse else "") and len(ng.get(x, [])) >= 5][:2]:
-            slide_nube(prs, cliente, proyecto, "%s · marca y público" % m,
-                       nm.get(m, [])[:12], ng.get(m, [])[:12], nota=M_NUBE)
+                # Elogios y quejas por separado: es lo que se convierte en decisión.
+                if info.get("neg"):
+                    slide_nube(prs, cliente, proyecto,
+                               "%s · de qué se queja su público" % m,
+                               info["neg"], info.get("top_neg", []),
+                               lectura=("Las palabras de los comentarios negativos. "
+                                        "El tamaño es cuántas veces se repiten."),
+                               nota=M_NUBE_NEG, color=RGBColor(0xFF, 0x8A, 0x7A))
 
     # ── 4. Los que hablan solos
     mudos = [b for b in activas if b["posts"] >= 100 and b["sov_eng"] < 3]

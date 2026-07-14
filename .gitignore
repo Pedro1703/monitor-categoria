@@ -16,3 +16,6 @@ Informe_Ciudadana.pptx
 __pycache__/
 *.pyc
 .DS_Store
+brand/nubes/
+brand/marcas/
+nubes.json
