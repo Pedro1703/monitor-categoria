@@ -23,8 +23,11 @@ La clasificación con IA es opcional y necesita ANTHROPIC_API_KEY. Sin ella, los
 territorios salen del lexicón de monitor.config.json — suficiente para el tablero.
 """
 
-import os, sys, json, argparse, collections
+import os, re, sys, json, argparse, collections
 from datetime import datetime
+
+# Debajo de este N, un porcentaje de sentimiento es humo: no se muestra como número.
+MIN_MUESTRA = 30
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
@@ -135,6 +138,41 @@ def clasificar_ia(posts, lexicon):
             print("  [aviso] lote %d falló (%s): quedan las reglas." % (ini, e), file=sys.stderr)
 
 
+def cargar_comentarios():
+    """Comentarios ya clasificados por sentimiento.py. Si no existen, no pasa nada."""
+    ruta = os.path.join(RAW_DIR, "comments_scored.jsonl")
+    if not os.path.exists(ruta):
+        return []
+    return [json.loads(l) for l in open(ruta, encoding="utf-8") if l.strip()]
+
+
+def resumen_sentimiento(comentarios, marca):
+    """Sentimiento de una marca, con control honesto de tamaño de muestra.
+
+    Con 8 comentarios, decir '25% negativo' es inventar precisión: dos comentarios
+    más y el número se mueve 25 puntos. Debajo de MIN_MUESTRA se devuelve el conteo
+    crudo y una bandera, y el tablero muestra 'muestra insuficiente' en vez de un %.
+    """
+    suyos = [c for c in comentarios if c["marca"] == marca]
+    rel = [c for c in suyos if c.get("relevante")]
+    n = len(rel)
+    s = collections.Counter(c["sentimiento"] for c in rel)
+    motivos_neg = collections.Counter(
+        c["motivo"] for c in rel
+        if c["sentimiento"] == "negativo" and c["motivo"] != "No habla de la marca")
+    return {
+        "comentarios": len(suyos),
+        "relevantes": n,
+        "suficiente": n >= MIN_MUESTRA,
+        "pos": s["positivo"], "neu": s["neutro"], "neg": s["negativo"],
+        "pos_pct": round(s["positivo"] / n * 100) if n else 0,
+        "neg_pct": round(s["negativo"] / n * 100) if n else 0,
+        # Sentimiento neto: positivos menos negativos, sobre el total relevante.
+        "neto": round((s["positivo"] - s["negativo"]) / n * 100) if n else 0,
+        "motivos_neg": [{"k": k, "v": v} for k, v in motivos_neg.most_common(5)],
+    }
+
+
 def build(usar_ia):
     cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
     ruta_posts = os.path.join(RAW_DIR, "posts.jsonl")
@@ -148,17 +186,25 @@ def build(usar_ia):
     perfiles, ventana = perfiles_raw["perfiles"], perfiles_raw["ventana"]
 
     lexicon = {k: v for k, v in cfg["territorios"].items() if not k.startswith("_")}
+    pat_sorteo = re.compile(cfg["comentarios"]["patron_sorteo"], re.I)
     for p in posts:
         p["eng"] = p["likes"] + p["comments"] + p["shares"]
         p["territorio"] = clasificar_reglas(p["texto"], p["hashtags"], lexicon)
         p["sentimiento"] = "neutro"
+        # Un sorteo compra interacción con un premio. Mezclarlo con el engagement
+        # ganado por contenido infla a quien más regala y engaña al que lee el tablero.
+        p["sorteo"] = bool(pat_sorteo.search(p.get("texto") or ""))
     if usar_ia:
         clasificar_ia(posts, lexicon)
+
+    comentarios = cargar_comentarios()
 
     semanas = max(ventana["dias"] / 7.0, 1)
     meses_orden = sorted({p["fecha"][:7] for p in posts})
     total_posts = len(posts)
     total_eng = sum(p["eng"] for p in posts) or 1
+    organicos = [p for p in posts if not p["sorteo"]]
+    total_eng_org = sum(p["eng"] for p in organicos) or 1
 
     marcas = []
     for b in cfg["brands"]:
@@ -172,6 +218,11 @@ def build(usar_ia):
         for p in suyos:
             eng_mes[p["fecha"][:7]] += p["eng"]
 
+        # Engagement orgánico: el que la marca se ganó, sin regalar nada.
+        org = [p for p in suyos if not p["sorteo"]]
+        eng_org = sum(p["eng"] for p in org)
+        sorteos_n = len(suyos) - len(org)
+
         top = sorted(suyos, key=lambda p: -p["eng"])[:5]
         marcas.append({
             "n": nombre,
@@ -181,6 +232,13 @@ def build(usar_ia):
             "seguidores": seguidores,
             "posts": len(suyos),
             "eng": eng,
+            "sorteos": sorteos_n,
+            "eng_org": eng_org,
+            # Qué parte del engagement de la marca vino de regalar premios.
+            "pct_sorteo": round((eng - eng_org) / eng * 100) if eng else 0,
+            "sov_eng_org": round(eng_org / total_eng_org * 100, 1),
+            "eng_rate_org": round(eng_org / len(org) / seguidores * 100, 2) if org and seguidores else 0,
+            "sent": resumen_sentimiento(comentarios, nombre),
             "eng_prom": round(eng / len(suyos)) if suyos else 0,
             # Tasa de engagement: engagement promedio por posteo sobre la base de
             # seguidores. Es la métrica que compara marcas de distinto tamaño.
@@ -231,9 +289,32 @@ def build(usar_ia):
     if bse and bse["posts"]:
         rank_eng = sorted(activas, key=lambda m: -m["sov_eng"])
         pos = [m["n"] for m in rank_eng].index("BSE") + 1
+        rank_org = sorted(activas, key=lambda m: -m["sov_eng_org"])
+        pos_org = [m["n"] for m in rank_org].index("BSE") + 1
         alertas.append({"lvl": "pos" if pos == 1 else "neg",
                         "t": "BSE es #%d en share of engagement de la categoría (%.1f%%)."
                              % (pos, bse["sov_eng"])})
+        # Cuánto del engagement se compró con premios. Ojo: solo es mala noticia si al
+        # sacar los sorteos la marca se cae. Si aguanta, es fuerza real y hay que decirlo.
+        if bse["pct_sorteo"] >= 40:
+            if pos_org > pos:
+                alertas.append({"lvl": "neg",
+                                "t": "El %d%% del engagement del BSE viene de sorteos. Sin regalar "
+                                     "nada cae del puesto #%d al #%d: el liderazgo está comprado."
+                                     % (bse["pct_sorteo"], pos, pos_org)})
+            else:
+                alertas.append({"lvl": "pos",
+                                "t": "El %d%% del engagement del BSE viene de sorteos (%d posteos), "
+                                     "pero aun sacándolos sigue #%d con %.1f%% de share orgánico: "
+                                     "el liderazgo es real, no comprado."
+                                     % (bse["pct_sorteo"], bse["sorteos"], pos_org, bse["sov_eng_org"])})
+        # La conversación real de la categoría es ínfima: eso es una oportunidad.
+        com_reales = sum(m["sent"]["comentarios"] for m in activas)
+        if comentarios and com_reales:
+            alertas.append({"lvl": "neg",
+                            "t": "Toda la categoría junta generó %d comentarios reales en el año "
+                                 "(fuera de sorteos). Nadie está conversando: hay lugar para el "
+                                 "primero que lo haga." % com_reales})
         lider_rate = max(activas, key=lambda m: m["eng_rate"])
         if lider_rate["n"] != "BSE":
             alertas.append({"lvl": "neg",
@@ -265,10 +346,17 @@ def build(usar_ia):
             "total_eng": total_eng,
             "marcas_activas": len(activas),
             "ia": usar_ia,
-            "fuente": ("Posteos, engagement, formatos y seguidores: Instagram/Facebook/TikTok "
+            "comentarios": len(comentarios),
+            "min_muestra": MIN_MUESTRA,
+            "fuente": ("Posteos, engagement, formatos y seguidores: Instagram/Facebook "
                        "vía Apify (datos reales de la ventana). Territorios: %s."
                        % ("clasificación con IA (Claude)" if usar_ia
                           else "clasificación por reglas — correr con --ia para IA")),
+            "sesgo_comentarios": ("Los comentarios públicos sobre-expresan la queja (el conforme no "
+                                  "comenta) y a la vez las marcas moderan y borran. Los dos sesgos "
+                                  "empujan en direcciones opuestas y no se cancelan prolijamente. "
+                                  "Estos números sirven para COMPARAR marcas y motivos entre sí, no "
+                                  "como termómetro de satisfacción del público uruguayo."),
         },
         "kpis": [
             {"lab": "Posteos relevados", "num": "{:,}".format(total_posts).replace(",", "."),
