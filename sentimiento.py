@@ -132,14 +132,44 @@ def filtrar(comentarios):
 SISTEMA = """Sos analista de reputación de marca en Uruguay, especializado en seguros.
 Clasificás comentarios que el público dejó en posteos de aseguradoras.
 
-Tené en cuenta:
+SENTIMIENTO
 - Español rioplatense, con voseo, ironía y sarcasmo. "Excelente, solo 3 meses para
   pagarme" es NEGATIVO, no positivo. Leé la intención, no las palabras sueltas.
-- Muchos comentarios no hablan de la marca (charla entre usuarios, comentarios sobre
-  un jugador de fútbol en un posteo de patrocinio, chistes). Esos van con relevante=false:
-  no ensucian el sentimiento de la marca.
-- Una pregunta ("¿cubre granizo?") es neutra y relevante: es interés, no queja.
-- El motivo importa más que el sentimiento. Sé preciso ahí.
+- Una pregunta ("¿cubre granizo?") es NEUTRA y relevante: es interés, no queja.
+- Si el comentario no habla de la marca (charla entre usuarios, un chiste, un comentario
+  sobre un jugador en un posteo de patrocinio), relevante=false: no ensucia el sentimiento.
+
+MOTIVO — aplicá esta regla en orden, y pará en la primera que corresponda:
+
+1. ¿El comentario relata una EXPERIENCIA CONCRETA de esta persona con la empresa
+   (un siniestro, un trámite, una llamada, un precio, un rechazo de cobertura, la app)?
+   → Entonces el motivo es esa experiencia. Tiene prioridad SIEMPRE, aunque el comentario
+     además elogie a la marca o hable del evento del posteo.
+     Ej: "Gracias por el evento, aunque todavía espero que me paguen el choque"
+         → Siniestro / demora en el pago  (no "Evento").
+
+2. ¿Es una pregunta o pedido de información?  → Consulta o pregunta.
+
+3. ¿La crítica es al CONTENIDO del posteo en sí — la marca publicó un dato falso, se
+   contradice (habla de seguridad y muestra a alguien sin cinturón), o la pieza está mal
+   hecha?  → Contenido de la marca: error o incoherencia.
+
+4. ¿Critica a la marca por ser empresa pública / estatal, por el uso de recursos del
+   Estado, o es una crítica política?  → Crítica a la empresa pública / al Estado.
+
+5. ¿Opina sobre el TEMA del posteo (la seguridad vial, el tránsito, la sociedad) sin
+   criticar a la marca?  → Debate sobre el tema del posteo. Suele ser relevante=true y
+   sentimiento neutro: es conversación, no queja contra la marca.
+
+6. ¿No hay nada de lo anterior, y el comentario apoya/felicita a la marca en general
+   o a su campaña?  → Apoyo o elogio a la marca.
+
+7. ¿Habla del evento, patrocinio, sorteo o del deporte que la marca auspicia?
+   → Evento / patrocinio / sorteo.
+
+Usá 'Otro' lo menos posible: si te dan ganas de usarlo seguido, es que falta una categoría.
+
+El motivo importa más que el sentimiento: es lo que se convierte en decisión. Sé preciso.
 
 Devolvés exactamente un ítem por comentario, con el índice 'i' que te dieron."""
 
@@ -209,12 +239,21 @@ def clasificar(comentarios, cfg, modelo, mezclar=False):
 # ══════════════════════════════════════════════════ Etapa 3: validación
 
 def validar(comentarios, etiquetas, cfg, modelo):
-    """Segunda pasada independiente sobre una muestra: mide si el clasificador es estable."""
+    """Segunda pasada independiente: mide si el clasificador es estable.
+
+    MUESTREO ESTRATIFICADO, a propósito. Los negativos son ~15% del total, así que una
+    muestra al azar de 60 agarra unos 9 y el acuerdo sobre ellos queda sin poder
+    estadístico — justo sobre lo único que va al informe. Por eso se validan TODOS los
+    negativos, más una muestra del resto para el número global.
+    """
     idxs = [i for i in etiquetas if etiquetas[i].get("relevante")]
     if len(idxs) < 20:
         print("Muy pocos comentarios relevantes para validar.")
         return
-    muestra = random.sample(idxs, min(MUESTRA_VALID, len(idxs)))
+
+    negs = [i for i in idxs if etiquetas[i]["sentimiento"] == "negativo"]
+    resto = [i for i in idxs if i not in set(negs)]
+    muestra = negs + random.sample(resto, min(MUESTRA_VALID, len(resto)))
     sub = [comentarios[i] for i in muestra]
 
     print("\nValidando: segunda pasada sobre %d comentarios…" % len(sub))
@@ -226,16 +265,37 @@ def validar(comentarios, etiquetas, cfg, modelo):
                  if j in segundas and segundas[j]["motivo"] == etiquetas[i]["motivo"])
     n = sum(1 for j in range(len(muestra)) if j in segundas) or 1
 
+    # Los motivos de los NEGATIVOS se miden aparte: son los únicos que van al informe.
+    # Un motivo positivo ambiguo ("gracias por el evento") no cambia ninguna decisión;
+    # confundir "siniestro" con "atención al cliente" sí.
+    negs = [(j, i) for j, i in enumerate(muestra)
+            if j in segundas and etiquetas[i]["sentimiento"] == "negativo"]
+    ac_neg = sum(1 for j, i in negs if segundas[j]["motivo"] == etiquetas[i]["motivo"])
+    n_neg = len(negs)
+
     ps, pm = ac_sent / n * 100, ac_mot / n * 100
-    print("\n  Acuerdo entre pasadas · sentimiento: %.0f%%   · motivo: %.0f%%  (n=%d)" % (ps, pm, n))
+    print("\n  Acuerdo entre pasadas")
+    print("     sentimiento          : %.0f%%   (n=%d)" % (ps, n))
+    print("     motivo (todos)       : %.0f%%   (n=%d)" % (pm, n))
+    if n_neg:
+        pneg = ac_neg / n_neg * 100
+        print("     motivo de las QUEJAS : %.0f%%   (n=%d)  ← el que va al informe" % (pneg, n_neg))
+
     if ps < 85:
         print("  ⚠  El sentimiento es INESTABLE (<85%). No presentes estos números sin revisar\n"
               "     la muestra a mano: raw/auditoria_muestra.csv", file=sys.stderr)
     else:
         print("  ✓  Sentimiento estable. Igual leé la muestra de auditoría antes de presentar.")
+
+    if n_neg and ac_neg / n_neg * 100 < 70:
+        print("  ⚠  Los motivos de las QUEJAS son inestables (<70%): las categorías se solapan.\n"
+              "     Revisá 'comentarios.motivos' en monitor.config.json. NO uses el ranking\n"
+              "     de motivos hasta arreglarlo.", file=sys.stderr)
+    elif n_neg:
+        print("  ✓  Los motivos de las quejas son estables: el ranking del informe es confiable.")
     if pm < 70:
-        print("  ⚠  Los MOTIVOS son inestables (<70%): probablemente las categorías se solapan.\n"
-              "     Revisá 'comentarios.motivos' en monitor.config.json.", file=sys.stderr)
+        print("  ·  (Los motivos POSITIVOS son borrosos, y está bien: 'gracias por el evento'\n"
+              "      cae legítimamente en más de una caja. No cambian ninguna decisión.)")
 
 
 def escribir_auditoria(comentarios, etiquetas):

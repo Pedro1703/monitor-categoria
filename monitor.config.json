@@ -15,22 +15,25 @@
     "min_comentarios": 1,
     "por_posteo": 60,
     "motivos": [
-      "Siniestros / demoras en el pago",
+      "Siniestro / demora en el pago",
       "Cobertura rechazada / letra chica",
       "Atención al cliente",
       "Precio / cuotas",
       "Trámites / burocracia",
       "App / autogestión / digital",
+      "Contenido de la marca: error o incoherencia",
+      "Crítica a la empresa pública / al Estado",
+      "Debate sobre el tema del posteo",
       "Consulta o pregunta",
-      "Elogio al servicio",
-      "Marca / campaña / creatividad",
-      "Patrocinio / deporte",
+      "Apoyo o elogio a la marca",
+      "Evento / patrocinio / sorteo",
       "No habla de la marca",
       "Otro"
     ],
     "excluir_sorteos": true,
     "_comment_sorteos": "CRÍTICO. En esta categoría el 97% de los comentarios sale de ~25 posteos de sorteo, y son '@juan @pedro vamos!!' — valor reputacional CERO. Bajarlos cuesta una fortuna y no aporta señal. Se excluyen ANTES de bajarlos (filtrar después ya es plata gastada). La opinión real vive en la cola larga de posteos con pocos comentarios.",
-    "patron_sorteo": "sorteo|sorteamos|sortear|concurso|particip|etiquet|regalamos|ganate|gánate|te regalamos|premio|entradas dobles|comenta para|comentá para"
+    "patron_sorteo": "sorteo|sorteamos|sortear|concurso|particip|etiquet|regalamos|ganate|gánate|te regalamos|premio|entradas dobles|comenta para|comentá para",
+    "_comment_motivos": "Dos categorías se agregaron DESPUÉS de mirar los datos: 'Contenido de la marca: error o incoherencia' y 'Crítica a la empresa pública'. Antes caían en 'Otro', que pasó a ser el motivo #1 de queja del BSE — señal de que faltaba una caja. Resultó ser el hallazgo principal: la negatividad del BSE no es por siniestros, es por errores factuales en sus propios posteos y por incoherencia del mensaje. Si 'Otro' vuelve a liderar, es que falta otra categoría: mirá los comentarios, no ajustes el número."
   },
   "limites": {
     "_comment": "Tope de posteos por marca y por red. Protege el gasto en Apify: el costo escala con la cantidad de items scrapeados. Con ventana de 365 días el tope es 500: una marca muy activa (5 posteos/semana) hace ~260 al año, así que 500 deja margen sin dejar que la factura se dispare. Techo duro de gasto = 500 × marcas × redes.",
