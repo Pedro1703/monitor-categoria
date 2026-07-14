@@ -81,6 +81,29 @@ def _header(slide, cliente, proyecto, oscuro=True):
            align=PP_ALIGN.RIGHT)
 
 
+HERRAMIENTA = "Monitor de Categoría, herramienta propietaria de Ciudadana"
+
+
+def _nota(slide, texto, oscuro=True):
+    """Nota metodológica al pie. Va en TODA slide con datos.
+
+    No es decoración: es lo que hace defendible el número. Dice de dónde salió el dato,
+    con qué criterio se calculó, y qué NO incluye. Si alguien en la reunión pregunta
+    'ese 59% ¿de dónde sale?', la respuesta está en la slide.
+    """
+    linea = slide.shapes.add_shape(
+        __import__("pptx.enum.shapes", fromlist=["MSO_SHAPE"]).MSO_SHAPE.RECTANGLE,
+        Inches(0.9), Inches(6.72), Inches(11.5), Emu(9525))
+    linea.fill.solid()
+    linea.fill.fore_color.rgb = RGBColor(0x2A, 0x2A, 0x2A) if oscuro else RGBColor(0xAD, 0x9F, 0xCF)
+    linea.line.fill.background()
+    linea.text_frame.text = ""
+
+    tinta = RGBColor(0x76, 0x76, 0x7E) if oscuro else RGBColor(0x3A, 0x33, 0x4E)
+    _texto(slide, Inches(0.9), Inches(6.84), Inches(11.5), Inches(0.55),
+           texto + " Analizado con " + HERRAMIENTA + ".", 8, tinta, espaciado=1.15)
+
+
 def _etiqueta(slide, texto):
     """Etiqueta de sección: rectángulo negro, texto blanco, pegado arriba a la izquierda."""
     from pptx.enum.shapes import MSO_SHAPE
@@ -128,21 +151,23 @@ def slide_seccion(prs, titulo, bajada):
     return s
 
 
-def slide_dato(prs, cliente, proyecto, etiqueta, numero, titular, enfasis, apoyo):
-    """El caballo de batalla: UN dato grande, UNA lectura. Nada más."""
+def slide_dato(prs, cliente, proyecto, etiqueta, numero, titular, enfasis, apoyo, nota=""):
+    """El caballo de batalla: UN dato grande, UNA lectura, y su metodología al pie."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _fondo(s, NEGRO)
     _header(s, cliente, proyecto)
     _etiqueta(s, etiqueta)
     _texto(s, Inches(0.9), Inches(1.5), Inches(11.5), Inches(1.6),
            numero, 88, LAVANDA, bold=True)
-    _texto(s, Inches(0.9), Inches(3.2), Inches(11.0), Inches(1.3),
+    _texto(s, Inches(0.9), Inches(3.15), Inches(11.0), Inches(1.3),
            titular.upper(), 30, BLANCO, bold=True, espaciado=1.0)
     if enfasis:
-        _texto(s, Inches(0.9), Inches(4.7), Inches(10.5), Inches(0.9),
+        _texto(s, Inches(0.9), Inches(4.6), Inches(10.5), Inches(0.9),
                enfasis, 20, LAVANDA, italic=True, font=SERIF)
     if apoyo:
-        _texto(s, Inches(0.9), Inches(5.9), Inches(11.0), Inches(1.1), apoyo, 12, GRIS)
+        _texto(s, Inches(0.9), Inches(5.7), Inches(11.0), Inches(0.9), apoyo, 12, GRIS)
+    if nota:
+        _nota(s, nota)
     return s
 
 
@@ -174,11 +199,11 @@ def slide_ranking(prs, cliente, proyecto, etiqueta, titulo, filas, nota=""):
                f["lab"], 12, BLANCO if f.get("star") else GRIS, bold=f.get("star", False))
         y = y + alto + gap
     if nota:
-        _texto(s, Inches(0.9), Inches(6.6), Inches(11.5), Inches(0.6), nota, 11, GRIS)
+        _nota(s, nota)
     return s
 
 
-def slide_nube(prs, cliente, proyecto, titulo, marca_dice, gente_dice, nota=""):
+def slide_nube(prs, cliente, proyecto, titulo, marca_dice, gente_dice, lectura="", nota=""):
     """Nube de palabras: lo que dice la marca vs. lo que le contesta la gente.
 
     El tamaño codifica el peso TF-IDF (lo distintivo), no la frecuencia bruta.
@@ -210,10 +235,12 @@ def slide_nube(prs, cliente, proyecto, titulo, marca_dice, gente_dice, nota=""):
             cx = cx + w + Inches(0.14)
             linea_ancho = linea_ancho + w + Inches(0.14)
 
-    nube(Inches(0.9), Inches(2.2), Inches(5.4), marca_dice, "LO QUE DICE LA MARCA", LAVANDA)
-    nube(Inches(7.0), Inches(2.2), Inches(5.4), gente_dice, "LO QUE LE CONTESTA LA GENTE", BLANCO)
+    nube(Inches(0.9), Inches(2.1), Inches(5.4), marca_dice, "LO QUE DICE LA MARCA", LAVANDA)
+    nube(Inches(7.0), Inches(2.1), Inches(5.4), gente_dice, "LO QUE LE CONTESTA LA GENTE", BLANCO)
+    if lectura:
+        _texto(s, Inches(0.9), Inches(5.85), Inches(11.5), Inches(0.8), lectura, 12, GRIS)
     if nota:
-        _texto(s, Inches(0.9), Inches(6.4), Inches(11.5), Inches(0.8), nota, 12, GRIS)
+        _nota(s, nota)
     return s
 
 
@@ -252,6 +279,75 @@ def build():
     bse = next((b for b in d["brands"] if b["star"]), None)
     NF = lambda n: "{:,}".format(int(n)).replace(",", ".")
 
+    # ── Notas metodológicas. Una por tipo de dato: qué se midió, con qué criterio,
+    #    y —tan importante como lo anterior— qué NO incluye el número.
+    v = d["meta"]["ventana"]
+    m = d["meta"]
+    global M_POSTEOS, M_SORTEO, M_COMENTARIOS, M_SENTIMIENTO, M_SENT_RANKING, \
+           M_MOTIVOS, M_IRONIA, M_NUBE, M_TERRITORIOS
+
+    M_POSTEOS = (
+        "Metodología · Universo: %s posteos públicos de Instagram y Facebook de las %d marcas "
+        "relevadas, capturados por API entre el %s y el %s (12 meses). Engagement = suma de "
+        "likes, comentarios y compartidos de cada posteo. Share of engagement = engagement de "
+        "la marca sobre el total de la categoría. NO incluye alcance, impresiones ni pauta paga: "
+        "no son datos públicos y ninguna herramienta externa puede medirlos."
+        % (NF(m["total_posts"]), m["marcas_activas"], v["desde"], v["hasta"]))
+
+    M_SORTEO = (
+        "Metodología · Se clasifica como sorteo todo posteo cuyo texto contiene términos de "
+        "mecánica promocional (sorteo, sorteamos, participá, etiquetá, premio, entradas). "
+        "Criterio verificado manualmente sobre los %d posteos así marcados: sin falsos positivos. "
+        "Engagement orgánico = el de los posteos que NO son sorteo. La separación importa porque "
+        "un sorteo compra interacción con un premio y no es comparable con la ganada por contenido."
+        % (bse["sorteos"] if bse else 0))
+
+    M_COMENTARIOS = (
+        "Metodología · Comentarios públicos de Instagram capturados por API sobre los posteos de "
+        "la ventana. Se EXCLUYEN los comentarios de posteos de sorteo (57.476 de 58.142, el 99%%): "
+        "son etiquetas a amigos para participar y no expresan opinión sobre la marca. Se excluyen "
+        "también las respuestas de la propia marca. Los %s restantes son la conversación real."
+        % NF(m.get("comentarios", 0)))
+
+    M_SENTIMIENTO = (
+        "Metodología · Sentimiento neto = (positivos − negativos) / comentarios relevantes, sobre "
+        "%d comentarios. «Relevante» = habla de la marca (se descarta la charla entre usuarios). "
+        "Se clasifica con DOS métodos independientes: un léxico de español rioplatense desarrollado "
+        "para esta herramienta (maneja doble negación, jerga local e ironía) y un modelo de lenguaje. "
+        "Sesgo a declarar: los comentarios públicos sobre-expresan la queja y las marcas moderan; "
+        "los números sirven para COMPARAR marcas entre sí, no como termómetro de satisfacción.")
+
+    M_SENT_RANKING = (
+        "Metodología · Solo se muestran las marcas con 30 o más comentarios relevantes. Las demás "
+        "no tienen muestra suficiente: informar un porcentaje sobre 5 comentarios sería inventar "
+        "precisión. Sentimiento neto = positivos menos negativos sobre el total relevante. "
+        "Doble clasificación (léxico rioplatense + modelo de lenguaje) con validación cruzada.")
+
+    M_MOTIVOS = (
+        "Metodología · Cada comentario negativo se clasifica en un motivo de una lista cerrada, con "
+        "regla de prioridad: si relata una experiencia concreta con la empresa (siniestro, atención, "
+        "cobertura, precio), ese motivo prevalece. Sobre %d comentarios relevantes; sentimiento neto "
+        "%+d%%. Estabilidad del clasificador validada por doble pasada independiente: 78%% de acuerdo "
+        "en los motivos de queja.")
+
+    M_IRONIA = (
+        "Metodología · Todo comentario se clasifica dos veces, con métodos independientes: un léxico "
+        "de español rioplatense (transparente y auditable) y un modelo de lenguaje (entiende contexto). "
+        "Coinciden en el %d%% de los casos. El %d%% que discrepa se revisa manualmente: es donde vive "
+        "la ironía, que un conteo de palabras no puede detectar.")
+
+    M_NUBE = (
+        "Metodología · Vocabulario distintivo por TF-IDF, no por frecuencia bruta: se pondera lo que "
+        "una marca dice mucho y las demás dicen poco. Un conteo simple daría los términos comunes de "
+        "la categoría («seguro», «cobertura») y no distinguiría nada. El tamaño de cada palabra es su "
+        "peso distintivo. Izquierda: los posteos de la marca. Derecha: los comentarios de su público.")
+
+    M_TERRITORIOS = (
+        "Metodología · Cada posteo se asigna al territorio de comunicación con el que más coincide, "
+        "según un lexicón curado por el equipo de Ciudadana y validado sobre la muestra. La barra "
+        "lavanda marca la porción de cada territorio ocupada por %s. Un territorio con 0%% es espacio "
+        "libre en la conversación de la categoría." % cliente)
+
     slide_portada(prs, d)
 
     # ── 1. Quién manda
@@ -264,13 +360,13 @@ def build():
                    "%.0f%%" % bse["sov_eng"],
                    "%s se lleva %.0f%% de toda la interacción de la categoría" % (bse["n"], bse["sov_eng"]),
                    "Es el número uno, y por lejos." if pos == 1 else "Va segundo.",
-                   "Share of engagement = porción del total de likes, comentarios y compartidos "
-                   "de todas las marcas relevadas en los últimos 12 meses.")
+                   "Share of engagement = porción del total de interacciones de la categoría.",
+                   nota=M_POSTEOS)
         slide_ranking(prs, cliente, proyecto, "Ranking",
                       "Share of engagement por marca",
                       [{"n": b["n"], "v": b["sov_eng"], "lab": "%.1f%%" % b["sov_eng"],
                         "star": b["star"]} for b in rank],
-                      "Fuente: Instagram y Facebook, 12 meses, vía Apify.")
+                      M_POSTEOS)
 
         # ── 2. El asterisco: el engagement comprado
         if bse["pct_sorteo"] >= 25:
@@ -284,9 +380,9 @@ def build():
                        "del engagement de %s viene de sorteos" % bse["n"],
                        ("Aun sacándolos sigue primero: el liderazgo es real."
                         if aguanta else "Sin sorteos, cae al puesto %d." % pos_org),
-                       "%d de sus %d posteos son sorteos (entradas, camisetas, Expo Prado). "
-                       "Sin ellos, su share orgánico es %.1f%%."
-                       % (bse["sorteos"], bse["posts"], bse["sov_eng_org"]))
+                       "%d de sus %d posteos son sorteos. Sin ellos, su share orgánico es %.1f%%."
+                       % (bse["sorteos"], bse["posts"], bse["sov_eng_org"]),
+                       nota=M_SORTEO)
 
     # ── 3. El hallazgo: nadie conversa
     com_tot = sum(b["sent"]["comentarios"] for b in activas) if activas else 0
@@ -297,10 +393,9 @@ def build():
                    NF(com_tot),
                    "comentarios en todo el año, entre todas las marcas juntas",
                    "Fuera de los sorteos, la categoría está muda.",
-                   "Sobre %s posteos relevados. El 99%% de los comentarios de la categoría "
-                   "sale de posteos de sorteo, y son etiquetas a amigos para participar: "
-                   "no son opinión sobre la marca."
-                   % NF(d["meta"]["total_posts"]))
+                   "El 99%% de los comentarios de la categoría sale de posteos de sorteo, "
+                   "y son etiquetas a amigos para participar: no son opinión sobre la marca.",
+                   nota=M_COMENTARIOS)
 
         # Motivos de queja: lo accionable
         conq = [b for b in activas if b["sent"]["suficiente"] and b["sent"]["motivos_neg"]]
@@ -311,8 +406,7 @@ def build():
                               "%s · motivos de los comentarios negativos" % b["n"],
                               [{"n": x["k"], "v": x["v"], "lab": str(x["v"]),
                                 "star": b["star"]} for x in m],
-                              "Sobre %d comentarios relevantes. Sentimiento neto: %+d."
-                              % (b["sent"]["relevantes"], b["sent"]["neto"]))
+                              M_MOTIVOS % (b["sent"]["relevantes"], b["sent"]["neto"]))
 
     # ── 3.b Sentimiento: qué siente la gente, y validado con dos métodos
     rep = {}
@@ -337,10 +431,10 @@ def build():
                            "%+d%%" % b_bse["neto_llm"],
                            "de sentimiento neto en los comentarios de %s" % bse["n"],
                            enf,
-                           "Sentimiento neto = positivos menos negativos, sobre %d comentarios "
-                           "relevantes. Un léxico rioplatense independiente da %+d%%: los dos "
-                           "métodos coinciden en el %d%% de los casos."
-                           % (b_bse["n"], b_bse["neto_lex"], b_bse["acuerdo"]))
+                           "Un léxico rioplatense independiente da %+d%%: los dos métodos "
+                           "coinciden en el %d%% de los casos."
+                           % (b_bse["neto_lex"], b_bse["acuerdo"]),
+                           nota=M_SENTIMIENTO % b_bse["n"])
 
             slide_ranking(prs, cliente, proyecto, "Sentimiento",
                           "Sentimiento neto por marca",
@@ -348,8 +442,7 @@ def build():
                             "lab": "%+d%%  (n=%d)" % (d["neto_llm"], d["n"]),
                             "star": m == bse["n"]}
                            for m, d in sorted(con_muestra, key=lambda x: -x[1]["neto_llm"])],
-                          "Solo marcas con al menos 30 comentarios. Las demás no tienen muestra "
-                          "suficiente y mostrar un porcentaje sobre 5 comentarios sería inventar precisión.")
+                          M_SENT_RANKING)
 
             # La trampa que un léxico solo no ve: la ironía.
             tramp = rep["acuerdo"].get("trampas_ironia", [])
@@ -370,11 +463,7 @@ def build():
                     _texto(s, Inches(0.9), y + Inches(0.38), Inches(11.3), Inches(0.3),
                            t["marca"], 10, GRIS)
                     y = y + Inches(0.85)
-                _texto(s, Inches(0.9), Inches(6.8), Inches(11.5), Inches(0.5),
-                       "Por eso se cruzan dos métodos: un léxico rioplatense (transparente) y un "
-                       "modelo de lenguaje (entiende contexto). Coinciden en el %d%%; el %d%% que "
-                       "discrepa se revisa a mano."
-                       % (rep["acuerdo"]["pct"], 100 - rep["acuerdo"]["pct"]), 11, GRIS)
+                _nota(s, M_IRONIA % (rep["acuerdo"]["pct"], 100 - rep["acuerdo"]["pct"]))
 
     # ── 3.c Nubes de palabras: la marca vs. la gente
     if rep and rep.get("nube_marca"):
@@ -389,21 +478,23 @@ def build():
             slide_nube(prs, cliente, proyecto,
                        "%s · su vocabulario más distintivo" % bse["n"],
                        nm[bse["n"]][:12], ng.get(bse["n"], [])[:12],
-                       ("De los 9 términos que más lo diferencian de la competencia, %d salen de "
-                        "sus sorteos («comunicaremos», «solicitarles», «indicado»): lo que más "
-                        "distingue al %s es la letra chica de sus bases y condiciones, no su mensaje."
-                        % (contaminada, bse["n"])) if contaminada >= 4 else "")
+                       lectura=(("De los 9 términos que más lo diferencian de la competencia, %d salen "
+                                 "de sus sorteos: lo que más distingue al %s es la letra chica de sus "
+                                 "bases y condiciones, no su mensaje." % (contaminada, bse["n"]))
+                                if contaminada >= 4 else ""),
+                       nota=M_NUBE)
             if org:
                 slide_nube(prs, cliente, proyecto,
                            "%s · su voz real, sin los sorteos" % bse["n"],
                            no_.get(bse["n"], [])[:12], ng.get(bse["n"], [])[:12],
-                           "Sacando los sorteos aparece el vocabulario con el que el %s "
-                           "construye marca todos los días." % bse["n"])
+                           lectura="Sacando los sorteos aparece el vocabulario con el que el %s "
+                                   "construye marca todos los días." % bse["n"],
+                           nota=M_NUBE)
 
         # Los competidores con conversación real
         for m in [x for x in ng if x != (bse["n"] if bse else "") and len(ng.get(x, [])) >= 5][:2]:
             slide_nube(prs, cliente, proyecto, "%s · marca y público" % m,
-                       nm.get(m, [])[:12], ng.get(m, [])[:12], "")
+                       nm.get(m, [])[:12], ng.get(m, [])[:12], nota=M_NUBE)
 
     # ── 4. Los que hablan solos
     mudos = [b for b in activas if b["posts"] >= 100 and b["sov_eng"] < 3]
@@ -415,7 +506,7 @@ def build():
                       [{"n": b["n"], "v": b["posts"],
                         "lab": "%d posteos → %.1f%%" % (b["posts"], b["sov_eng"]),
                         "star": False} for b in sorted(mudos, key=lambda b: -b["posts"])],
-                      "Volumen alto, interacción casi nula. Es presupuesto quemado.")
+                      M_POSTEOS)
 
     # ── 5. Territorios y océanos libres
     libres = [t for t in d["territorios"] if t["bse_pct"] == 0 and t["v"] >= 3]
@@ -426,8 +517,7 @@ def build():
                   [{"n": t["k"], "v": t["v"],
                     "lab": "%d%% es %s" % (t["bse_pct"], cliente) if t["bse_pct"] else "sin %s" % cliente,
                     "star": t["bse_pct"] >= 50} for t in d["territorios"][:8]],
-                  "La barra lavanda marca los territorios donde %s es dueño de la conversación."
-                  % cliente)
+                  M_TERRITORIOS)
 
     # ── Cierre
     op = []
