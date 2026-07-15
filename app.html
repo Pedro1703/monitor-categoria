@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzAwMDAwMCcvPjxwYXRoIGQ9J004IDdoMTZhMy41IDMuNSAwIDAgMSAzLjUgMy41djhBMy41IDMuNSAwIDAgMSAyNCAyMmgtOGwtNiA0LjVWMjJIOGEzLjUgMy41IDAgMCAxLTMuNS0zLjV2LThBMy41IDMuNSAwIDAgMSA4IDd6JyBmaWxsPScjQzRCNUU4Jy8+PGNpcmNsZSBjeD0nMTInIGN5PScxNC41JyByPScxLjYnIGZpbGw9JyMwMDAwMDAnLz48Y2lyY2xlIGN4PScxNicgY3k9JzE0LjUnIHI9JzEuNicgZmlsbD0nIzAwMDAwMCcvPjxjaXJjbGUgY3g9JzIwJyBjeT0nMTQuNScgcj0nMS42JyBmaWxsPScjMDAwMDAwJy8+PC9zdmc+">
 <title>JavIA · Monitor de categoría · Ciudadana</title>
 <style>
   :root{
@@ -161,6 +162,12 @@
   <div class="step" id="s2">
     <h2>Paso 2</h2>
     <div class="h"><span class="n">2</span>Qué querés trackear</div>
+
+    <div style="margin-bottom:22px">
+      <label>País</label>
+      <input type="text" id="pais" placeholder="Ej: Uruguay, Argentina, México, Chile" value="Uruguay">
+      <div class="hint" style="margin-top:6px">Define la variante de español para el análisis de sentimiento. Hoy el léxico rioplatense (Uruguay/Argentina) está afinado; para otros países se usa como base y se va sumando el específico.</div>
+    </div>
 
     <div class="grid2" style="margin-bottom:28px">
       <div>
@@ -338,6 +345,8 @@ function repetir(i){
   const std = ["30","90","180","365"];
   if (std.includes(String(c.dias))){ $("#dias").value = String(c.dias); $("#custom").style.display="none"; }
   else { $("#dias").value = "custom"; $("#custom").style.display="block"; $("#diasCustom").value = c.dias; }
+  // País
+  if (c.pais) $("#pais").value = c.pais;
   // Comentarios / IA
   $("#chCom").classList.toggle("on", c.comentarios);
   $("#chIA").classList.toggle("on", c.ia);
@@ -387,6 +396,7 @@ async function estimar(){ if (typeof MUESTRA === "undefined") MUESTRA = 1.0;
     return alert("Cada marca necesita al menos un usuario en alguna de las redes elegidas.");
 
   ULT = { cuentas, redes: redes(), dias: dias(),
+          pais: ($("#pais").value || "").trim(),
           comentarios: $("#chCom").classList.contains("on"),
           ia: $("#chIA").classList.contains("on"),
           informe: true, muestra: MUESTRA };

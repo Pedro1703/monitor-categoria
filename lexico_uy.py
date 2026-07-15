@@ -183,6 +183,25 @@ PATRONES_QUEJA = [
 TOKEN_RE = re.compile(r"[a-záéíóúñü]+", re.I)
 
 
+# Países donde el léxico rioplatense (voseo, jerga, dobles negativas locales) está afinado.
+# Para el resto se usa como BASE genérica de español y se deja constancia de que falta el
+# específico — que se va sumando a medida que se analizan esos mercados.
+RIOPLATENSES = {"uruguay", "argentina", "paraguay"}
+
+
+def variante(pais):
+    """Qué variante de léxico aplica para un país nombrado por el usuario en el front.
+
+    Devuelve dict con: pais, variante (nombre legible) y afinado (bool). No cambia el
+    motor de reglas todavía —hoy el único léxico construido es el rioplatense—, pero deja
+    registrado y visible qué se aplicó, que es lo que pidió el flujo por país.
+    """
+    p = (pais or "").strip().lower()
+    if not p or p in RIOPLATENSES:
+        return {"pais": pais or "Uruguay", "variante": "rioplatense", "afinado": True}
+    return {"pais": pais, "variante": "rioplatense (base genérica)", "afinado": False}
+
+
 def _norm(t):
     """Baja a minúsculas y saca tildes SOLO para comparar (el lexicón trae ambas)."""
     return "".join(c for c in unicodedata.normalize("NFD", t.lower())

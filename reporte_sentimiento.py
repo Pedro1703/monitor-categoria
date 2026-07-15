@@ -97,6 +97,14 @@ def main():
     posts = [json.loads(l) for l in open(os.path.join(RAW_DIR, "posts.jsonl"),
                                           encoding="utf-8") if l.strip()]
 
+    # País que nombró el usuario en el front → variante de léxico que aplica.
+    import lexico_uy
+    cfg = json.load(open(os.path.join(HERE, "monitor.config.json"), encoding="utf-8"))
+    var_pais = lexico_uy.variante(cfg.get("pais"))
+    print("País del análisis: %s   ·   léxico: %s%s"
+          % (var_pais["pais"], var_pais["variante"],
+             "" if var_pais["afinado"] else "  (léxico específico de ese país aún no construido)"))
+
     # ── 1. Lexicón sobre cada comentario
     for c in coments:
         r = analizar(c["texto"])
@@ -107,70 +115,78 @@ def main():
 
     rel = [c for c in coments if c.get("relevante")]
 
-    # ── 2. El cruce: dónde coinciden y dónde no
-    ac = sum(1 for c in rel if c["lex_sent"] == c["sentimiento"])
+    # Votos independientes de sentimiento por comentario:
+    #   · primario = c["sentimiento"]  → RoBERTuito si corrió en el scoring, si no Claude
+    #   · Claude   = c["sent_claude"]  → el sentimiento del LLM, queda como voto de validación
+    #   · léxico   = c["lex_sent"]     → el léxico rioplatense
     n = len(rel) or 1
+    tiene_rob = any("sent_rob" in c for c in rel)
+    motor = "RoBERTuito" if tiene_rob else "Claude"
+    def v_claude(c):
+        return c.get("sent_claude", c["sentimiento"])
+
+    # ── 2. El cruce primario: el motor de sentimiento contra el léxico
+    ac = sum(1 for c in rel if c["lex_sent"] == c["sentimiento"])
     matriz = collections.Counter((c["sentimiento"], c["lex_sent"]) for c in rel)
     discrepan = [c for c in rel if c["lex_sent"] != c["sentimiento"]]
 
     print("═" * 74)
-    print("  ACUERDO ENTRE LOS DOS MÉTODOS INDEPENDIENTES")
+    print("  ACUERDO ENTRE MÉTODOS INDEPENDIENTES")
     print("═" * 74)
     print("  Comentarios relevantes analizados: %d" % n)
-    print("  Coinciden Claude y el lexicón     : %d  (%.0f%%)" % (ac, ac / n * 100))
+    print("  Sentimiento primario: %s   ·   Motivo: Claude" % motor)
+    print("  Coinciden %-11s y el léxico: %d  (%.0f%%)" % (motor, ac, ac / n * 100))
     print("  Discrepan                         : %d  (%.0f%%)  ← acá vive la ironía"
           % (len(discrepan), len(discrepan) / n * 100))
-    print("\n  Matriz (filas = Claude, columnas = lexicón):")
+    print("\n  Matriz (filas = %s, columnas = léxico):" % motor)
     et = ["positivo", "neutro", "negativo"]
     print("      %-12s %8s %8s %8s" % ("", "pos", "neu", "neg"))
     for a in et:
         print("      %-12s %8d %8d %8d"
               % (a, matriz[(a, "positivo")], matriz[(a, "neutro")], matriz[(a, "negativo")]))
 
-    # El caso más peligroso: el lexicón lo lee positivo y Claude lo lee negativo.
-    # Son las ironías: "excelente, solo 3 meses para pagarme".
+    # Trampa clásica de ironía: el léxico lo lee positivo y el motor lo lee negativo.
     trampas = [c for c in rel if c["sentimiento"] == "negativo" and c["lex_sent"] == "positivo"]
     if trampas:
-        print("\n  ⚠ %d comentarios que un lexicón solo habría contado como POSITIVOS," % len(trampas))
-        print("    y en realidad son quejas. Es exactamente lo que el LLM aporta:\n")
+        print("\n  ⚠ %d comentarios que un léxico solo habría contado como POSITIVOS," % len(trampas))
+        print("    y en realidad son quejas:\n")
         for c in trampas[:5]:
             print("      · [%s] %s" % (c["marca"], c["texto"][:78].replace("\n", " ")))
 
-    # ── 2b. Tercer voto OPCIONAL: RoBERTuito local (gratis, si está instalado)
-    # No cambia ningún número del informe: solo agrega una medida de acuerdo con un
-    # segundo modelo ENTRENADO. Si pysentimiento no está, esto no corre y listo.
-    import nlp_local
-    validacion = {"metodos": 2, "claude_vs_lexico": round(ac / n * 100), "robertuito": False}
-    if nlp_local.disponible():
+    # ── 2b. Validación de tres métodos: RoBERTuito (primario) + Claude + léxico.
+    # Claude ya no es el sentimiento primario (eso es RoBERTuito), pero su lectura queda
+    # como tercer voto: cuanto más coinciden los tres, más confiable el número.
+    validacion = {"motor": motor, "metodos": 2, "primario_vs_lexico": round(ac / n * 100),
+                  "robertuito": tiene_rob,
+                  "pais": var_pais["pais"], "lexico": var_pais["variante"],
+                  "lexico_afinado": var_pais["afinado"]}
+    if tiene_rob:
+        ac_claude = sum(1 for c in rel if v_claude(c) == c["sentimiento"])
+        ac_claude_lex = sum(1 for c in rel if v_claude(c) == c["lex_sent"])
+        tres = sum(1 for c in rel if c["sentimiento"] == v_claude(c) == c["lex_sent"])
+        validacion = {"motor": "RoBERTuito", "metodos": 3,
+                      "primario_vs_lexico": round(ac / n * 100), "robertuito": True,
+                      "robertuito_vs_claude": round(ac_claude / n * 100),
+                      "claude_vs_lexico": round(ac_claude_lex / n * 100),
+                      "los_tres": round(tres / n * 100),
+                      "pais": var_pais["pais"], "lexico": var_pais["variante"],
+                      "lexico_afinado": var_pais["afinado"]}
         print("\n" + "═" * 74)
-        print("  TERCER VOTO — RoBERTuito local (modelo entrenado con 500M de tweets)")
+        print("  TERCER VOTO — Claude (el LLM que además clasifica los motivos)")
         print("═" * 74)
-        preds = nlp_local.sentimiento([c["texto"] for c in rel])
-        if preds:
-            for c, p in zip(rel, preds):
-                c["rob_sent"] = p
-            ac_rob = sum(1 for c in rel if c.get("rob_sent") == c["sentimiento"])
-            ac_rob_lex = sum(1 for c in rel if c.get("rob_sent") == c["lex_sent"])
-            tres = sum(1 for c in rel
-                       if c.get("rob_sent") == c["sentimiento"] == c["lex_sent"])
-            validacion = {"metodos": 3, "claude_vs_lexico": round(ac / n * 100),
-                          "robertuito": True,
-                          "robertuito_vs_claude": round(ac_rob / n * 100),
-                          "robertuito_vs_lexico": round(ac_rob_lex / n * 100),
-                          "los_tres": round(tres / n * 100)}
-            print("  Coinciden RoBERTuito y Claude : %d  (%.0f%%)" % (ac_rob, ac_rob / n * 100))
-            print("  Coinciden RoBERTuito y lexicón: %d  (%.0f%%)" % (ac_rob_lex, ac_rob_lex / n * 100))
-            print("  Los TRES coinciden            : %d  (%.0f%%)  ← el núcleo más confiable"
-                  % (tres, tres / n * 100))
+        print("  Coinciden RoBERTuito y Claude : %d  (%.0f%%)" % (ac_claude, ac_claude / n * 100))
+        print("  Coinciden Claude y el léxico  : %d  (%.0f%%)" % (ac_claude_lex, ac_claude_lex / n * 100))
+        print("  Los TRES coinciden            : %d  (%.0f%%)  ← el núcleo más confiable"
+              % (tres, tres / n * 100))
     else:
-        print("\n  (RoBERTuito local no instalado — se omite el tercer voto. "
-              "Para activarlo: pip install pysentimiento)")
+        print("\n  (RoBERTuito no corrió en el scoring: el sentimiento primario lo puso "
+              "Claude. Instalá pysentimiento para el motor local.)")
 
-    # ── 3. Sentimiento por marca, con los dos métodos lado a lado
+    # ── 3. Sentimiento por marca: el motor primario y el léxico, lado a lado
     print("\n" + "═" * 74)
-    print("  SENTIMIENTO POR MARCA — los dos métodos, uno al lado del otro")
+    print("  SENTIMIENTO POR MARCA — %s y el léxico, uno al lado del otro" % motor)
     print("═" * 74)
-    print("  %-15s %6s %10s %10s %9s" % ("MARCA", "N", "NETO Claude", "NETO léxico", "ACUERDO"))
+    print("  %-15s %6s %10s %10s %9s" % ("MARCA", "N", "NETO " + motor, "NETO léxico", "ACUERDO"))
     por_marca = collections.defaultdict(list)
     for c in rel:
         por_marca[c["marca"]].append(c)

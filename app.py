@@ -46,6 +46,7 @@ def _consulta_guardar(quien, body):
     import time as _t
     reg = {"cuando": _t.strftime("%Y-%m-%d %H:%M"), "quien": quien,
            "categoria": (body.get("categoria") or "").strip() or _categoria_de(body["cuentas"]),
+           "pais": (body.get("pais") or "").strip(),
            "cuentas": body["cuentas"], "redes": body["redes"], "dias": int(body["dias"]),
            "comentarios": bool(body.get("comentarios")), "ia": bool(body.get("ia")),
            "muestra": float(body.get("muestra", 1.0))}
@@ -329,7 +330,7 @@ def _clasificar_error(texto):
     return None
 
 
-def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8, reanudar=False, muestra=1.0, categoria=None):
+def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8, reanudar=False, muestra=1.0, categoria=None, pais=None):
     """Ejecuta el pipeline completo en un hilo, reportando el paso actual."""
     ESTADO.update({"corriendo": True, "paso": "Preparando…", "paso_num": 0,
                    "log": [], "fin": None, "error": None, "error_tipo": None,
@@ -343,6 +344,8 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
             cfg["ventana_dias"] = dias
             if categoria:
                 cfg["categoria"] = categoria
+            if pais:
+                cfg["pais"] = pais
             cfg["brands"] = [{
                 "n": c["n"], "star": c.get("star", False),
                 "ig": c.get("ig") if "ig" in redes else None,
@@ -626,6 +629,7 @@ class Handler(BaseHTTPRequestHandler):
                 "eta_min": est.get("eta_min", 8),
                 "muestra": float(body.get("muestra", 1.0)),
                 "categoria": (body.get("categoria") or "").strip() or _categoria_de(body["cuentas"]),
+                "pais": (body.get("pais") or "").strip(),
             }).start()
             return self._json({"ok": True})
 

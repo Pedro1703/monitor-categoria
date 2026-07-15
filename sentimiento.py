@@ -468,6 +468,23 @@ def main():
         comentarios[i].update({k: e[k] for k in
                                ("relevante", "sentimiento", "motivo", "intensidad")})
 
+    # Motor de sentimiento: RoBERTuito (RoBERTa entrenado con 500M de tweets en español)
+    # es el PRIMARIO; Claude queda para el MOTIVO. El sentimiento de Claude se conserva
+    # como voto de validación (sent_claude). Si RoBERTuito no está instalado, el
+    # sentimiento primario lo pone Claude (fallback), y el pipeline sigue igual.
+    import nlp_local
+    if nlp_local.disponible():
+        idxs = list(etiquetas)
+        preds = nlp_local.sentimiento([comentarios[i]["texto"] for i in idxs])
+        for i, p in zip(idxs, preds):
+            comentarios[i]["sent_claude"] = comentarios[i]["sentimiento"]
+            comentarios[i]["sent_rob"] = p
+            comentarios[i]["sentimiento"] = p        # RoBERTuito manda en el sentimiento
+        print("\nSentimiento: RoBERTuito (primario, %d comentarios) · motivo: Claude" % len(idxs))
+    else:
+        print("\n[aviso] RoBERTuito no instalado: el sentimiento primario lo pone Claude. "
+              "Para el motor local: pip install pysentimiento", file=sys.stderr)
+
     salida = os.path.join(RAW_DIR, "comments_scored.jsonl")
     with open(salida, "w", encoding="utf-8") as f:
         for i, c in enumerate(comentarios):

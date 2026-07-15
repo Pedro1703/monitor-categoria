@@ -1,6 +1,7 @@
 {
   "_comment": "Monitor de categoría — configuración semilla. En cada corrida el front reescribe 'categoria', 'brands' y 'ventana_dias'; los territorios y los motivos se DERIVAN del sector con IA (analyze.py y sentimiento.py). Estos valores son solo el ejemplo por defecto y el fallback si la IA no está disponible.",
   "categoria": "Seguros · Uruguay",
+  "pais": "Uruguay",
   "ventana_dias": 365,
   "_nota_tiktok": "Búsqueda web (jul 2026): NINGUNA aseguradora uruguaya tiene cuenta oficial en TikTok. Lo que aparece bajo 'seguros Uruguay' en TikTok son corredores independientes y usuarios quejándose de siniestros — no las marcas. Es un océano libre real, no un dato faltante. El soporte de TikTok queda cableado en el pipeline: en cuanto alguna marca abra cuenta, se agrega el handle en 'tt' y se releva sin tocar código.",
   "_nota_otras_redes": "LinkedIn y YouTube quedan fuera: LinkedIn es comunicación corporativa (otro público) y YouTube es el repositorio de los spots de TV. X/Twitter SÍ está soportado (actor apidojo~tweet-scraper), aunque en seguros Uruguay la actividad es marginal.",

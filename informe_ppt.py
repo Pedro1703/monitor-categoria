@@ -220,28 +220,38 @@ def slide_metodologia(prs, cliente, proyecto, d, cfg, rep=None):
         val = (rep or {}).get("validacion") or {}
         con_rob = val.get("robertuito")
         acuerdo = rep["acuerdo"]["pct"] if rep else None
+        lexico = val.get("lexico", "rioplatense")
+        pais = val.get("pais")
         nlp = [
             "· %s comentarios del público" % "{:,}".format(m["comentarios"]).replace(",", "."),
             "· Hasta %d comentarios por posteo" % cfg["comentarios"].get("por_posteo", 60),
-            "",
-            "Sentimiento — %s métodos" % ("tres" if con_rob else "dos"),
-            "independientes:",
-            "   1. Léxico rioplatense propio",
-            "      (doble negación, jerga,",
-            "       ironía)",
-            "   2. Modelo de lenguaje (Claude)",
-            "      (entiende contexto)",
         ]
+        if pais:
+            nlp.append("· País: %s  ·  léxico %s" % (pais, lexico))
+        nlp.append("")
         if con_rob:
             nlp += [
-                "   3. RoBERTuito, modelo entrenado",
-                "      con 500M de tweets en español",
-                "", "   Los tres coinciden en el %d%%:" % val.get("los_tres", 0),
-                "   ese núcleo es lo más confiable.",
+                "Sentimiento — motor RoBERTuito",
+                "   (RoBERTa, 500M de tweets en",
+                "    español; gratis y offline)",
+                "Motivo — Claude (lee el contexto",
+                "   y la intención)",
+                "",
+                "Validación de tres métodos:",
+                "   RoBERTuito + Claude + léxico",
+                "   coinciden en %d%%. Ese núcleo" % val.get("los_tres", 0),
+                "   es lo más confiable.",
             ]
-        elif acuerdo:
-            nlp += ["", "   Coinciden en el %d%%." % acuerdo,
-                    "   El resto se revisa a mano."]
+        else:
+            nlp += [
+                "Sentimiento — doble método:",
+                "   1. Léxico %s propio" % lexico,
+                "      (doble negación, jerga,",
+                "       ironía)",
+                "   2. Modelo de lenguaje (Claude)",
+            ]
+            if acuerdo:
+                nlp += ["", "   Coinciden en el %d%%." % acuerdo]
     else:
         nlp = ["No se analizaron comentarios", "en esta corrida."]
     bloque(COL3, Inches(1.85), "Cómo se leyó a la gente", nlp)
@@ -455,31 +465,31 @@ def build():
         % (NF(m["total_posts"]), redes_txt, m["marcas_activas"], v["desde"], v["hasta"], periodo))
 
     M_COMENTARIOS = (
-        "Metodología · Comentarios públicos de Instagram sobre los posteos de la ventana. Se toman "
-        "hasta %d comentarios por posteo (para que un posteo viral no distorsione) y se descartan "
-        "las respuestas de la propia marca. Total analizado: %s."
+        "Metodología · Comentarios públicos de todas las redes relevadas sobre los posteos de la "
+        "ventana. Se toman hasta %d comentarios por posteo (para que un posteo viral no distorsione) "
+        "y se descartan las respuestas de la propia marca. Total analizado: %s."
         % (cfg["comentarios"].get("por_posteo", 60), NF(m.get("comentarios", 0))))
 
     M_SENTIMIENTO = (
         "Metodología · Sentimiento neto = (positivos − negativos) / comentarios relevantes, sobre "
         "%d comentarios. «Relevante» = habla de la marca (se descarta la charla entre usuarios). "
-        "Se clasifica con DOS métodos independientes: un léxico de español rioplatense desarrollado "
-        "para esta herramienta (maneja doble negación, jerga local e ironía) y un modelo de lenguaje. "
-        "Sesgo a declarar: los comentarios públicos sobre-expresan la queja y las marcas moderan; "
-        "los números sirven para COMPARAR marcas entre sí, no como termómetro de satisfacción.")
+        "El sentimiento lo clasifica RoBERTuito (modelo entrenado con 500M de tweets en español) y se "
+        "valida cruzándolo con un léxico rioplatense propio (doble negación, jerga, ironía) y con un "
+        "modelo de lenguaje. Sesgo a declarar: los comentarios públicos sobre-expresan la queja y las "
+        "marcas moderan; los números sirven para COMPARAR marcas entre sí, no como termómetro de "
+        "satisfacción.")
 
     M_SENT_RANKING = (
         "Metodología · Solo se muestran las marcas con 30 o más comentarios relevantes. Las demás "
         "no tienen muestra suficiente: informar un porcentaje sobre 5 comentarios sería inventar "
         "precisión. Sentimiento neto = positivos menos negativos sobre el total relevante. "
-        "Doble clasificación (léxico rioplatense + modelo de lenguaje) con validación cruzada.")
+        "Sentimiento por RoBERTuito, validado contra un léxico rioplatense y un modelo de lenguaje.")
 
     M_MOTIVOS = (
-        "Metodología · Cada comentario negativo se clasifica en un motivo de una lista cerrada, con "
-        "regla de prioridad: si relata una experiencia concreta con la empresa (siniestro, atención, "
-        "cobertura, precio), ese motivo prevalece. Sobre %d comentarios relevantes; sentimiento neto "
-        "%+d%%. Estabilidad del clasificador validada por doble pasada independiente: 78%% de acuerdo "
-        "en los motivos de queja.")
+        "Metodología · Cada comentario negativo se clasifica en un motivo de una lista derivada del "
+        "sector, con regla de prioridad: si relata una experiencia concreta con la empresa (atención, "
+        "precio, un trámite, la app), ese motivo prevalece. Sobre %d comentarios relevantes; "
+        "sentimiento neto %+d%%. Estabilidad del clasificador validada por doble pasada independiente.")
 
     M_IRONIA = (
         "Metodología · Todo comentario se clasifica dos veces, con métodos independientes: un léxico "
