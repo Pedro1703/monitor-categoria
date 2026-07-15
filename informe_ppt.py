@@ -217,19 +217,29 @@ def slide_metodologia(prs, cliente, proyecto, d, cfg, rep=None):
     # ── Columna 3: cómo se clasificó
     nlp = []
     if m.get("comentarios"):
+        val = (rep or {}).get("validacion") or {}
+        con_rob = val.get("robertuito")
         acuerdo = rep["acuerdo"]["pct"] if rep else None
         nlp = [
             "· %s comentarios del público" % "{:,}".format(m["comentarios"]).replace(",", "."),
             "· Hasta %d comentarios por posteo" % cfg["comentarios"].get("por_posteo", 60),
             "",
-            "Sentimiento — doble método:",
+            "Sentimiento — %s métodos" % ("tres" if con_rob else "dos"),
+            "independientes:",
             "   1. Léxico rioplatense propio",
             "      (doble negación, jerga,",
             "       ironía)",
-            "   2. Modelo de lenguaje",
+            "   2. Modelo de lenguaje (Claude)",
             "      (entiende contexto)",
         ]
-        if acuerdo:
+        if con_rob:
+            nlp += [
+                "   3. RoBERTuito, modelo entrenado",
+                "      con 500M de tweets en español",
+                "", "   Los tres coinciden en el %d%%:" % val.get("los_tres", 0),
+                "   ese núcleo es lo más confiable.",
+            ]
+        elif acuerdo:
             nlp += ["", "   Coinciden en el %d%%." % acuerdo,
                     "   El resto se revisa a mano."]
     else:

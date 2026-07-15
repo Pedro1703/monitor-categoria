@@ -140,6 +140,7 @@ def main():
     # No cambia ningún número del informe: solo agrega una medida de acuerdo con un
     # segundo modelo ENTRENADO. Si pysentimiento no está, esto no corre y listo.
     import nlp_local
+    validacion = {"metodos": 2, "claude_vs_lexico": round(ac / n * 100), "robertuito": False}
     if nlp_local.disponible():
         print("\n" + "═" * 74)
         print("  TERCER VOTO — RoBERTuito local (modelo entrenado con 500M de tweets)")
@@ -152,6 +153,11 @@ def main():
             ac_rob_lex = sum(1 for c in rel if c.get("rob_sent") == c["lex_sent"])
             tres = sum(1 for c in rel
                        if c.get("rob_sent") == c["sentimiento"] == c["lex_sent"])
+            validacion = {"metodos": 3, "claude_vs_lexico": round(ac / n * 100),
+                          "robertuito": True,
+                          "robertuito_vs_claude": round(ac_rob / n * 100),
+                          "robertuito_vs_lexico": round(ac_rob_lex / n * 100),
+                          "los_tres": round(tres / n * 100)}
             print("  Coinciden RoBERTuito y Claude : %d  (%.0f%%)" % (ac_rob, ac_rob / n * 100))
             print("  Coinciden RoBERTuito y lexicón: %d  (%.0f%%)" % (ac_rob_lex, ac_rob_lex / n * 100))
             print("  Los TRES coinciden            : %d  (%.0f%%)  ← el núcleo más confiable"
@@ -215,6 +221,7 @@ def main():
         "por_marca": reporte_marcas,
         "nube_marca": nube_marca,
         "nube_gente": nube_gente,
+        "validacion": validacion,
     }
     json.dump(salida, open(os.path.join(HERE, "reporte_sentimiento.json"), "w",
                            encoding="utf-8"), ensure_ascii=False, indent=1)
