@@ -81,16 +81,33 @@ TOKEN = re.compile(r"[a-záéíóúñü]{4,}", re.I)
 MENCION = re.compile(r"@[\w.]+")
 
 
+def _marcas_a_filtrar():
+    """Nombres y handles de todas las marcas de la config, para sacarlos de las nubes."""
+    import json as _j
+    fuera = set()
+    try:
+        cfg = _j.load(open(os.path.join(HERE, "monitor.config.json"), encoding="utf-8"))
+        for b in cfg["brands"]:
+            for parte in re.split(r"[\s/]+", b["n"].lower()):
+                fuera.add(parte)
+                fuera.add(parte.replace("ó", "o").replace("á", "a").replace("í", "i"))
+            for k in ("ig", "fb", "x", "tt"):
+                if b.get(k):
+                    fuera.add(b[k].lower())
+    except Exception:
+        pass
+    return fuera
+
+
 def palabras(textos, marca):
     """Frecuencia de palabras con contenido. Saca stopwords, handles y el nombre de la marca."""
     fuera = set(w for w in STOP if not w.startswith("comment_")) | set(RUIDO)
     for p in re.split(r"[\s/]+", marca.lower()):
         fuera.add(p)
         fuera.add(p.replace("ó", "o").replace("á", "a"))
-    # El nombre de la marca y sus handles aparecerían siempre primeros y no aportan.
-    fuera |= {"seguro", "seguros", "bse", "porto", "mapfre", "sura", "surco",
-              "metlife", "cristobal", "cristóbal", "bseuruguay", "portoseguro",
-              "segurossurauy", "metlifeuruguay", "sancristobaluy", "surcoseguros"}
+    # Los nombres y handles de TODAS las marcas de la categoría: aparecerían siempre
+    # primeros y no aportan. Se leen de la config — nada hardcodeado de una categoría.
+    fuera |= _marcas_a_filtrar()
     c = collections.Counter()
     for t in textos:
         # Las @menciones son handles, no opinión: fuera antes de tokenizar.

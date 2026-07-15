@@ -541,7 +541,7 @@ def build():
                       "La categoría transmite. No dialoga.")
         slide_dato(prs, cliente, proyecto, "Conversación real",
                    NF(com_tot),
-                   "comentarios en todo el año, entre todas las marcas juntas",
+                   "comentarios en la ventana, entre todas las marcas juntas",
                    "Fuera de los sorteos, la categoría está muda.",
                    "El 99%% de los comentarios de la categoría sale de posteos de sorteo, "
                    "y son etiquetas a amigos para participar: no son opinión sobre la marca.",
@@ -671,7 +671,9 @@ def build():
                     "star": t["bse_pct"] >= 50} for t in d["territorios"][:8]],
                   M_TERRITORIOS)
 
-    # ── Cierre
+    # ── Cierre. Todo sale de los DATOS, no de supuestos de la categoría. Antes había
+    # una slide de TikTok con texto de seguros hardcodeado ("primera póliza"): rompía
+    # el sentido en cualquier otra categoría.
     op = []
     if d["meta"].get("comentarios") and com_tot < 1500:
         op.append({"t": "La categoría no conversa",
@@ -679,11 +681,21 @@ def build():
     if libres:
         op.append({"t": "Territorios sin dueño: " + ", ".join(t["k"] for t in libres[:2]),
                    "d": "Nadie los ocupa hoy. Están libres."})
-    op.append({"t": "TikTok está vacío",
-               "d": "Ninguna aseguradora uruguaya tiene cuenta. Es la red del público que todavía no compró su primera póliza."})
+    # Redes que NINGUNA marca de la categoría usa: océano de red, dato duro.
+    usadas = {r for b in d["brands"] for r in b.get("redes", {})}
+    NOMBRE_RED = {"ig": "Instagram", "fb": "Facebook", "x": "X / Twitter", "tt": "TikTok"}
+    ausentes = [NOMBRE_RED[k] for k in ("tt", "x", "fb", "ig")
+                if k not in usadas and k in NOMBRE_RED]
+    if ausentes:
+        op.append({"t": "%s sin explorar" % ausentes[0],
+                   "d": "Ninguna marca de la categoría tiene cuenta ahí. Es una red disponible."})
     if bse and bse["pct_sorteo"] >= 40:
         op.append({"t": "Bajar la dependencia del sorteo",
-                   "d": "La mitad del engagement se compra con premios. El contenido tiene que sostenerse solo."})
+                   "d": "Buena parte del engagement se compra con premios. El contenido tiene que "
+                        "sostenerse solo."})
+    if not op:                    # nunca dejar la slide vacía
+        op.append({"t": "Sin océanos evidentes",
+                   "d": "La categoría está disputada en todos los frentes relevados."})
     slide_cierre(prs, op[:4])
 
     prs.save(SALIDA)

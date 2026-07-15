@@ -59,7 +59,7 @@ def clasificar_reglas(texto, hashtags, lexicon):
     return mejor or "Sin clasificar"
 
 
-def clasificar_ia(posts, lexicon):
+def clasificar_ia(posts, lexicon, cfg):
     """
     Capa opcional: reclasifica cada posteo con Claude y le agrega sentimiento.
 
@@ -119,10 +119,10 @@ def clasificar_ia(posts, lexicon):
                     "effort": "low",
                     "format": {"type": "json_schema", "schema": schema},
                 },
-                system=("Sos analista de comunicación publicitaria en Uruguay. Clasificás "
-                        "posteos de aseguradoras en su territorio de comunicación y el "
-                        "sentimiento del mensaje de la marca (no el de los comentarios). "
-                        "Devolvés un ítem por posteo, con el índice 'i' que te dieron."),
+                system=("Sos analista de comunicación publicitaria. Clasificás posteos de marcas "
+                        "de la categoría «%s» en su territorio de comunicación y el sentimiento del "
+                        "mensaje de la marca (no el de los comentarios). Devolvés un ítem por posteo, "
+                        "con el índice 'i' que te dieron." % cfg["categoria"]),
                 messages=[{"role": "user", "content":
                            "Territorios posibles: %s\n\nPosteos:\n%s"
                            % (", ".join(territorios), listado)}],
@@ -195,7 +195,7 @@ def build(usar_ia):
         # ganado por contenido infla a quien más regala y engaña al que lee el tablero.
         p["sorteo"] = bool(pat_sorteo.search(p.get("texto") or ""))
     if usar_ia:
-        clasificar_ia(posts, lexicon)
+        clasificar_ia(posts, lexicon, cfg)
 
     comentarios = cargar_comentarios()
 
@@ -273,6 +273,11 @@ def build(usar_ia):
                 palabras[w] += 1
     top_palabras = [{"w": w, "s": c} for w, c in palabras.most_common(30)]
 
+    # El nombre de la marca protagonista. NUNCA hardcodear una marca: la herramienta es
+    # genérica y 'star' puede ser cualquiera. (Este bug — "BSE" fijo — reventaba con
+    # cualquier otra categoría.)
+    principal = bse["n"] if bse else None
+
     # Territorios de toda la categoría, con qué marcas los ocupan (mapa de océano)
     terr = collections.Counter(p["territorio"] for p in posts)
     territorios_cat = []
@@ -282,60 +287,62 @@ def build(usar_ia):
             "k": t, "v": c,
             "pct": round(c / total_posts * 100, 1) if total_posts else 0,
             "marcas": [m for m, _ in dueños.most_common(3)],
-            "bse_pct": round(dueños.get("BSE", 0) / c * 100) if c else 0,
+            # % del territorio ocupado por la marca protagonista
+            "bse_pct": round(dueños.get(principal, 0) / c * 100) if (c and principal) else 0,
         })
 
     alertas = []
     if bse and bse["posts"]:
-        rank_eng = sorted(activas, key=lambda m: -m["sov_eng"])
-        pos = [m["n"] for m in rank_eng].index("BSE") + 1
-        rank_org = sorted(activas, key=lambda m: -m["sov_eng_org"])
-        pos_org = [m["n"] for m in rank_org].index("BSE") + 1
+        nombres_eng = [m["n"] for m in sorted(activas, key=lambda m: -m["sov_eng"])]
+        pos = nombres_eng.index(principal) + 1 if principal in nombres_eng else len(nombres_eng)
+        nombres_org = [m["n"] for m in sorted(activas, key=lambda m: -m["sov_eng_org"])]
+        pos_org = nombres_org.index(principal) + 1 if principal in nombres_org else len(nombres_org)
         alertas.append({"lvl": "pos" if pos == 1 else "neg",
-                        "t": "BSE es #%d en share of engagement de la categoría (%.1f%%)."
-                             % (pos, bse["sov_eng"])})
+                        "t": "%s es #%d en share of engagement de la categoría (%.1f%%)."
+                             % (principal, pos, bse["sov_eng"])})
         # Cuánto del engagement se compró con premios. Ojo: solo es mala noticia si al
         # sacar los sorteos la marca se cae. Si aguanta, es fuerza real y hay que decirlo.
         if bse["pct_sorteo"] >= 40:
             if pos_org > pos:
                 alertas.append({"lvl": "neg",
-                                "t": "El %d%% del engagement del BSE viene de sorteos. Sin regalar "
+                                "t": "El %d%% del engagement de %s viene de sorteos. Sin regalar "
                                      "nada cae del puesto #%d al #%d: el liderazgo está comprado."
-                                     % (bse["pct_sorteo"], pos, pos_org)})
+                                     % (bse["pct_sorteo"], principal, pos, pos_org)})
             else:
                 alertas.append({"lvl": "pos",
-                                "t": "El %d%% del engagement del BSE viene de sorteos (%d posteos), "
+                                "t": "El %d%% del engagement de %s viene de sorteos (%d posteos), "
                                      "pero aun sacándolos sigue #%d con %.1f%% de share orgánico: "
                                      "el liderazgo es real, no comprado."
-                                     % (bse["pct_sorteo"], bse["sorteos"], pos_org, bse["sov_eng_org"])})
+                                     % (bse["pct_sorteo"], principal, bse["sorteos"], pos_org,
+                                        bse["sov_eng_org"])})
         # La conversación real de la categoría es ínfima: eso es una oportunidad.
         com_reales = sum(m["sent"]["comentarios"] for m in activas)
         if comentarios and com_reales:
             alertas.append({"lvl": "neg",
-                            "t": "Toda la categoría junta generó %d comentarios reales en el año "
+                            "t": "Toda la categoría junta generó %d comentarios reales en la ventana "
                                  "(fuera de sorteos). Nadie está conversando: hay lugar para el "
                                  "primero que lo haga." % com_reales})
         lider_rate = max(activas, key=lambda m: m["eng_rate"])
-        if lider_rate["n"] != "BSE":
+        if lider_rate["n"] != principal:
             alertas.append({"lvl": "neg",
-                            "t": "%s tiene mejor tasa de engagement que BSE (%.2f%% vs %.2f%%): "
+                            "t": "%s tiene mejor tasa de engagement que %s (%.2f%% vs %.2f%%): "
                                  "convierte mejor su audiencia."
-                                 % (lider_rate["n"], lider_rate["eng_rate"], bse["eng_rate"])})
-        # Territorios donde BSE está ausente: son el océano libre o el flanco descubierto
+                                 % (lider_rate["n"], principal, lider_rate["eng_rate"], bse["eng_rate"])})
+        # Territorios donde la protagonista está ausente: océano libre o flanco descubierto
         libres = [t["k"] for t in territorios_cat if t["bse_pct"] == 0 and t["v"] >= 3]
         if libres:
             alertas.append({"lvl": "neg",
-                            "t": "BSE no comunica en: %s." % ", ".join(libres[:3])})
+                            "t": "%s no comunica en: %s." % (principal, ", ".join(libres[:3]))})
         propios = [t["k"] for t in territorios_cat if t["bse_pct"] >= 70]
         if propios:
             alertas.append({"lvl": "pos",
-                            "t": "Territorio propio del BSE (≥70%% de los posteos): %s."
-                                 % ", ".join(propios[:2])})
+                            "t": "Territorio propio de %s (≥70%% de los posteos): %s."
+                                 % (principal, ", ".join(propios[:2]))})
 
     sin_cuenta = [m["n"] for m in marcas if m["sin_cuenta"]]
     if sin_cuenta:
         alertas.append({"lvl": "pos",
-                        "t": "%s no tiene presencia propia en redes en Uruguay." % ", ".join(sin_cuenta)})
+                        "t": "%s no tiene presencia propia en las redes relevadas." % ", ".join(sin_cuenta)})
 
     data = {
         "meta": {
@@ -356,16 +363,16 @@ def build(usar_ia):
                                   "comenta) y a la vez las marcas moderan y borran. Los dos sesgos "
                                   "empujan en direcciones opuestas y no se cancelan prolijamente. "
                                   "Estos números sirven para COMPARAR marcas y motivos entre sí, no "
-                                  "como termómetro de satisfacción del público uruguayo."),
+                                  "como termómetro de satisfacción del público."),
         },
         "kpis": [
             {"lab": "Posteos relevados", "num": "{:,}".format(total_posts).replace(",", "."),
              "sub": "%d marcas · %d días" % (len(activas), ventana["dias"])},
-            {"lab": "Share of engagement BSE", "num": "%.1f%%" % (bse["sov_eng"] if bse else 0),
+            {"lab": "Share of engagement %s" % (principal or ""), "num": "%.1f%%" % (bse["sov_eng"] if bse else 0),
              "sub": "sobre el total de la categoría"},
-            {"lab": "Cadencia BSE", "num": "%.1f" % (bse["cadencia"] if bse else 0),
+            {"lab": "Cadencia %s" % (principal or ""), "num": "%.1f" % (bse["cadencia"] if bse else 0),
              "sub": "posteos por semana"},
-            {"lab": "Tasa de engagement BSE", "num": "%.2f%%" % (bse["eng_rate"] if bse else 0),
+            {"lab": "Tasa de engagement %s" % (principal or ""), "num": "%.2f%%" % (bse["eng_rate"] if bse else 0),
              "sub": "engagement medio / seguidores"},
         ],
         "meses": [mes_label(m + "-01") for m in meses_orden],
