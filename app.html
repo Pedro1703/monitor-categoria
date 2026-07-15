@@ -189,12 +189,14 @@
       </div>
     </div>
 
+    <div id="historial" style="display:none;margin-bottom:20px"></div>
+
     <label>Marcas</label>
     <div class="thead" id="thead"></div>
     <div class="cuentas" id="cuentas"></div>
     <div style="display:flex;gap:10px;margin-top:12px">
       <button class="ghost" onclick="addCuenta()">+ Agregar marca</button>
-      <button class="ghost" onclick="cargarUltimas()" id="btnUlt" style="display:none">Usar las de la última corrida</button>
+      <button class="ghost" onclick="verConsultas()" id="btnHist" style="display:none">Repetir una consulta anterior ↺</button>
     </div>
     <div class="hint">
       <b style="color:var(--lav)">PRINCIPAL</b> es la marca del cliente: contra ella se comparan todas las demás.
@@ -237,7 +239,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 const NF = new Intl.NumberFormat("es-UY");
 
 const REDES = {ig:"Instagram", fb:"Facebook", x:"X / Twitter", tt:"TikTok"};
-let ULT = null, ULTIMAS = [], T0 = 0, ETA = 0;
+let ULT = null, ULTIMAS = [], T0 = 0, ETA = 0, MUESTRA = 1.0;
 
 const redes = () => [...document.querySelectorAll('.chip[data-red].on')].map(b => b.dataset.red);
 
@@ -305,10 +307,47 @@ function redibujar(){
   pintarHead();
   (prev.length ? prev : [{}, {}, {}]).forEach(filaCuenta);
 }
-function cargarUltimas(){
-  if (!ULTIMAS.length) return;
+let CONSULTAS = [];
+async function verConsultas(){
+  const h = $("#historial");
+  if (h.style.display === "block"){ h.style.display = "none"; return; }
+  const d = await (await fetch("/api/consultas")).json();
+  CONSULTAS = d.consultas || [];
+  if (!CONSULTAS.length){ alert("Todavía no hay consultas guardadas."); return; }
+  h.innerHTML = `<label>Consultas anteriores</label>
+    <div style="display:flex;flex-direction:column;gap:6px">
+    ${CONSULTAS.map((c,i) => `
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface-2);
+                  border:1px solid var(--line);border-radius:9px;padding:10px 13px">
+        <div style="flex:1;font-size:13px">
+          <b>${esc(c.categoria)}</b>
+          <span style="color:var(--ink-3)"> · ${c.dias} días · ${(c.redes||[]).map(r=>REDES[r]||r).join("+")}${c.comentarios?" · comentarios":""}${c.muestra<0.999?" · muestra "+Math.round(c.muestra*100)+"%":""}</span>
+          <div style="font-size:11px;color:var(--ink-3)">${esc(c.cuando)} · ${esc(c.quien||"")}</div>
+        </div>
+        <button class="pill on" onclick="repetir(${i})">Repetir</button>
+      </div>`).join("")}
+    </div>`;
+  h.style.display = "block";
+}
+function repetir(i){
+  const c = CONSULTAS[i];
+  // Redes
+  document.querySelectorAll(".chip[data-red]").forEach(b =>
+    b.classList.toggle("on", (c.redes||[]).includes(b.dataset.red)));
+  // Período
+  const std = ["30","90","180","365"];
+  if (std.includes(String(c.dias))){ $("#dias").value = String(c.dias); $("#custom").style.display="none"; }
+  else { $("#dias").value = "custom"; $("#custom").style.display="block"; $("#diasCustom").value = c.dias; }
+  // Comentarios / IA
+  $("#chCom").classList.toggle("on", c.comentarios);
+  $("#chIA").classList.toggle("on", c.ia);
+  MUESTRA = c.muestra || 1.0;
+  // Marcas
   $("#cuentas").innerHTML = "";
-  ULTIMAS.forEach(filaCuenta);
+  pintarHead();
+  c.cuentas.forEach(filaCuenta);
+  $("#historial").style.display = "none";
+  $("#s2").scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 // ── credenciales ────────────────────────────────────────────────────
@@ -340,7 +379,7 @@ async function guardarCreds(){
 }
 
 // ── estimación ──────────────────────────────────────────────────────
-async function estimar(){
+async function estimar(){ if (typeof MUESTRA === "undefined") MUESTRA = 1.0;
   const cuentas = leerCuentas();
   if (!cuentas.length) return alert("Agregá al menos una marca.");
   if (!cuentas.some(c => c.star)) return alert("Marcá cuál es la marca PRINCIPAL (la del cliente).");
@@ -350,7 +389,7 @@ async function estimar(){
   ULT = { cuentas, redes: redes(), dias: dias(),
           comentarios: $("#chCom").classList.contains("on"),
           ia: $("#chIA").classList.contains("on"),
-          informe: true };
+          informe: true, muestra: MUESTRA };
 
   const e = await (await fetch("/api/estimar", {method:"POST", body:JSON.stringify(ULT)})).json();
   ETA = e.eta_min || 8;
@@ -382,15 +421,36 @@ async function estimar(){
               ? `<b>Ojo:</b> nunca medimos a ${e.marcas_supuestas.slice(0,3).map(esc).join(", ")}. Para esas marcas el volumen es un supuesto, y por eso la banda es ancha. Los precios sí están verificados.`
               : "Primera corrida: el volumen es un supuesto; los precios están verificados.")}
         ${com.exacto ? `<br><br><b>Los ${NF.format(com.n)} comentarios son un conteo exacto</b>, no una estimación.` : ""}
-        ${com.sorteos_excluidos ? `<br><br><b>Te ahorra USD ${com.usd_sorteos.toFixed(2)}:</b> se excluyen ${NF.format(com.sorteos_excluidos)} comentarios de sorteos.` : ""}
+
       </div>
     </div>
+    ${e.ofrecer_muestra ? bloqueMuestra(e) : ""}
     <div style="margin-top:20px;display:flex;gap:10px">
       <button class="go" onclick="correr()">Confirmar ejecución →</button>
       <button class="ghost" onclick="$('#s3').classList.add('off')">Cancelar</button>
     </div>`;
   $("#s3").classList.remove("off");
   $("#s3").scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+// ── muestra opcional cuando el costo es alto ────────────────────────
+function bloqueMuestra(e){
+  const opciones = [[1,"Todo (100%)"],[0.2,"Muestra 20%"],[0.1,"Muestra 10%"],[0.05,"Muestra 5%"]];
+  return `<div style="margin-top:18px;background:#00000012;border-radius:12px;padding:18px">
+    <div style="font-weight:800;font-size:14px">El análisis completo cuesta USD ${e.costo_full.toFixed(2)}.</div>
+    <div style="font-size:13px;margin-top:4px;opacity:.85">Podés procesar TODOS los comentarios, o una muestra aleatoria más barata (el resultado de sentimiento es representativo con menos costo). Elegí:</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" id="muestraOps">
+      ${opciones.map(o => `<button class="pill ${Math.abs(MUESTRA-o[0])<0.001?"on":""}" onclick="setMuestra(${o[0]})">${o[1]}</button>`).join("")}
+      <button class="pill ${![1,0.2,0.1,0.05].some(v=>Math.abs(MUESTRA-v)<0.001)?"on":""}" onclick="muestraCustom()">Otro %…</button>
+    </div>
+  </div>`;
+}
+async function setMuestra(f){ MUESTRA = f; await estimar(); }
+async function muestraCustom(){
+  const v = prompt("¿Qué porcentaje de comentarios querés procesar? (1 a 100)", "15");
+  if (v === null) return;
+  const n = Math.max(1, Math.min(100, parseFloat(v) || 100));
+  MUESTRA = n / 100; await estimar();
 }
 
 // ── ejecución ───────────────────────────────────────────────────────
@@ -548,8 +608,9 @@ function resultado(f){
 (async () => {
   const d = await (await fetch("/api/estado")).json();
   pintarCreds(d.credenciales);
-  ULTIMAS = (d.cuentas || []).filter(c => c.n && (c.ig || c.fb || c.x || c.tt));
-  if (ULTIMAS.length) $("#btnUlt").style.display = "inline-block";
+  fetch("/api/consultas").then(r=>r.json()).then(d=>{
+    if ((d.consultas||[]).length) $("#btnHist").style.display = "inline-block";
+  });
   pintarHead();
   [{}, {}, {}].forEach(filaCuenta);
   if (d.corrida.log.length){ $("#s4").classList.remove("off"); T0 = Date.now(); poll(); }

@@ -1,5 +1,5 @@
 {
-  "_comment": "Monitor BSE — configuración. Ventana móvil de 12 meses de actividad en redes de BSE y la competencia. La capa VIVA (posteos, engagement, formatos, hashtags) la trae Apify; los territorios los clasifica analyze.py (reglas + IA opcional). Para cambiar de categoría, editar 'categoria' y 'brands'.",
+  "_comment": "Monitor de categoría — configuración semilla. En cada corrida el front reescribe 'categoria', 'brands' y 'ventana_dias'; los territorios y los motivos se DERIVAN del sector con IA (analyze.py y sentimiento.py). Estos valores son solo el ejemplo por defecto y el fallback si la IA no está disponible.",
   "categoria": "Seguros · Uruguay",
   "ventana_dias": 365,
   "_nota_tiktok": "Búsqueda web (jul 2026): NINGUNA aseguradora uruguaya tiene cuenta oficial en TikTok. Lo que aparece bajo 'seguros Uruguay' en TikTok son corredores independientes y usuarios quejándose de siniestros — no las marcas. Es un océano libre real, no un dato faltante. El soporte de TikTok queda cableado en el pipeline: en cuanto alguna marca abra cuenta, se agrega el handle en 'tt' y se releva sin tocar código.",
@@ -8,22 +8,21 @@
     "instagram_posts": "apify~instagram-scraper",
     "instagram_profile": "apify~instagram-profile-scraper",
     "facebook_posts": "apify~facebook-posts-scraper",
+    "facebook_comments": "apify~facebook-comments-scraper",
     "tiktok_posts": "clockworks~tiktok-scraper",
     "x_posts": "apidojo~tweet-scraper"
   },
   "comentarios": {
-    "_comment": "Control de la capa de comentarios. min_comentarios=1: en esta categoría hay tan poca conversación real (666 comentarios en 12 meses, fuera de sorteos) que conviene bajar TODO lo que no sea sorteo. 'motivos' es el enum cerrado del clasificador: es la parte accionable.",
+    "_comment": "Control de la capa de comentarios. 'motivos' es el enum cerrado del clasificador y es la parte accionable, PERO por corrida se deriva del sector con IA (sentimiento.py._derivar_motivos). Esta lista es el fallback sector-neutral que se usa solo si la derivación falla.",
     "min_comentarios": 1,
     "por_posteo": 60,
     "motivos": [
-      "Siniestro / demora en el pago",
-      "Cobertura rechazada / letra chica",
       "Atención al cliente",
-      "Precio / cuotas",
-      "Trámites / burocracia",
+      "Precio / cargos",
+      "Producto o servicio",
+      "Trámites / gestión",
       "App / autogestión / digital",
       "Contenido de la marca: error o incoherencia",
-      "Crítica a la empresa pública / al Estado",
       "Debate sobre el tema del posteo",
       "Consulta o pregunta",
       "Apoyo o elogio a la marca",
@@ -31,12 +30,9 @@
       "No habla de la marca",
       "Otro"
     ],
-    "excluir_sorteos": true,
-    "_comment_sorteos": "CRÍTICO. En esta categoría el 97% de los comentarios sale de ~25 posteos de sorteo, y son '@juan @pedro vamos!!' — valor reputacional CERO. Bajarlos cuesta una fortuna y no aporta señal. Se excluyen ANTES de bajarlos (filtrar después ya es plata gastada). La opinión real vive en la cola larga de posteos con pocos comentarios.",
-    "patron_sorteo": "sorteo|sorteamos|sortear|concurso|particip|etiquet|regalamos|ganate|gánate|te regalamos|premio|entradas dobles|comenta para|comentá para",
-    "_comment_motivos": "Dos categorías se agregaron DESPUÉS de mirar los datos: 'Contenido de la marca: error o incoherencia' y 'Crítica a la empresa pública'. Antes caían en 'Otro', que pasó a ser el motivo #1 de queja del BSE — señal de que faltaba una caja. Resultó ser el hallazgo principal: la negatividad del BSE no es por siniestros, es por errores factuales en sus propios posteos y por incoherencia del mensaje. Si 'Otro' vuelve a liderar, es que falta otra categoría: mirá los comentarios, no ajustes el número.",
+    "_comment_motivos": "Fallback sector-neutral. La taxonomía real la deriva la IA por corrida a partir de una muestra de los comentarios. Si 'Otro' termina liderando en un informe, es señal de que faltó una caja para ese sector.",
     "max_comentarios_total": 2000,
-    "_comment_max": "Techo duro de comentarios por corrida, sin importar la categoría. En seguros sobra (hay ~570); en categorías virales (política, deporte) frena antes de gastar una fortuna. A US$2,30/1.000, 2.000 comentarios son ~US$4,60 de tope en este paso."
+    "_comment_max": "Techo duro de comentarios por corrida, sin importar la categoría. En categorías virales (política, deporte) frena antes de gastar una fortuna. A US$2,30/1.000, 2.000 comentarios son ~US$4,60 de tope en este paso."
   },
   "limites": {
     "_comment": "Tope de posteos por marca y por red. Protege el gasto en Apify: el costo escala con la cantidad de items scrapeados. Con ventana de 365 días el tope es 500: una marca muy activa (5 posteos/semana) hace ~260 al año, así que 500 deja margen sin dejar que la factura se dispare. Techo duro de gasto = 500 × marcas × redes.",

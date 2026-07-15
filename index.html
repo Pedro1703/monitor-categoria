@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monitor BSE · un año de actividad en redes</title>
+<title>Monitor de categoría · Ciudadana</title>
 <style>
   :root{
     --bg:#0B0D0E; --surface:#121618; --surface-2:#171C1F; --line:#232B2F;
@@ -155,8 +155,8 @@ function empty(){
   document.getElementById("app").innerHTML = `
     <header>
       <div class="eyebrow">CiudadanIA · Inteligencia de categoría</div>
-      <h1>Monitor BSE</h1>
-      <div class="meta">Seguros · Uruguay — un año de actividad en redes de BSE y la competencia</div>
+      <h1>Monitor de categoría</h1>
+      <div class="meta">Todavía sin datos capturados</div>
     </header>
     <div class="empty">
       <h3>Todavía no hay datos capturados</h3>
@@ -191,7 +191,7 @@ function render(D){
   document.getElementById("app").innerHTML = `
     <header>
       <div class="eyebrow">CiudadanIA · Inteligencia de categoría</div>
-      <h1>Monitor BSE</h1>
+      <h1>Monitor de categoría</h1>
       <div class="meta">
         ${esc(D.meta.categoria)} · ventana ${esc(D.meta.ventana.desde)} → ${esc(D.meta.ventana.hasta)}
         (${D.meta.ventana.dias} días) · actualizado ${esc(D.meta.generado)}
@@ -326,7 +326,7 @@ function render(D){
     <footer>
       ${esc(D.meta.fuente)}<br>
       ${sinCuenta.length ? "Ausencia deliberada: " + sinCuenta.map(b => esc(b.n)).join(", ") + " no tiene cuenta propia en Uruguay.<br>" : ""}
-      Monitor BSE · CiudadanIA — Ciudadana. Datos vía Apify.
+      Monitor de categoría · CiudadanIA — Ciudadana. Datos vía Apify.
     </footer>`;
 
   // Nube: el peso se mapea a tamaño de texto, no a color (el color no codifica nada acá).

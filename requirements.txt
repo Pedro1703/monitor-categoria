@@ -6,3 +6,8 @@ wordcloud>=1.9
 matplotlib>=3.8
 pillow>=10.0
 certifi
+
+# Motor de NLP local, gratis y offline (tercer voto de validación). Arrastra transformers;
+# torch se instala aparte en versión CPU (ver Dockerfile). Pesa: NO entra en el plan free
+# de Render (512 MB), sí en el Standard (2 GB). Ver NLP_MODELOS.md.
+pysentimiento>=0.7

@@ -9,10 +9,11 @@ POR QUÉ ESTÁ DISEÑADO ASÍ
 
 El problema no es "sacar el sentimiento". Es sacar algo ACCIONABLE.
 
-Saber que el 23% de los comentarios del BSE son negativos no sirve para nada:
+Saber que el 23% de los comentarios de una marca son negativos no sirve para nada:
 no te dice qué hacer el lunes. Lo que sirve es saber que el 60% de esa negatividad
-son DEMORAS EN SINIESTROS mientras que la de Mapfre es PRECIO. Eso sí es estrategia.
-Por eso el clasificador no devuelve solo sentimiento: devuelve MOTIVO.
+es de un motivo concreto (una demora, un cargo, una atención) mientras que la de su
+competidor es PRECIO. Eso sí es estrategia. Por eso el clasificador no devuelve solo
+sentimiento: devuelve MOTIVO.
 
 El sistema tiene cuatro etapas, y cada una existe por una razón concreta.
 
@@ -27,8 +28,8 @@ Esta etapa es la que más mejora precisión y costo a la vez.
 Por qué un LLM y no un modelo de sentimiento español entrenado (pysentimiento, VADER,
 etc.): esos están entrenados con tuits genéricos y se rompen con (a) español rioplatense,
 (b) ironía —"excelente el servicio, solo 3 meses para pagarme" es NEGATIVO y cualquier
-lexicón lo lee positivo—, y (c) jerga de seguros, donde "me rechazaron el siniestro"
-tiene una carga que ninguna palabra sola delata. Claude maneja las tres.
+lexicón lo lee positivo—, y (c) jerga del sector, donde una frase como "me rechazaron
+el reclamo" tiene una carga que ninguna palabra sola delata. Claude maneja las tres.
 
 Se pide salida estructurada con enum cerrado (no texto libre), en lotes indexados,
 para que cada resultado vuelva a su comentario sin ambigüedad.
@@ -44,21 +45,22 @@ Dos controles:
      sentimiento que no auditó con los ojos. Este archivo existe para eso.
 
 --- Etapa 4: agregación (la hace analyze.py) ------------------------------
-Sentimiento neto por marca, tasa de queja, y ranking de motivos — BSE contra la categoría.
+Sentimiento neto por marca, tasa de queja, y ranking de motivos — la marca protagonista
+contra el resto de la categoría.
 
 ===========================================================================
 SESGOS QUE HAY QUE DECLARAR (y que el tablero declara)
 ===========================================================================
-1. Los comentarios públicos SOBRE-EXPRESAN la queja. El que está contento con su
-   póliza no comenta; al que le rebotaron un siniestro sí. El nivel absoluto NO es
-   "la opinión del público uruguayo".
+1. Los comentarios públicos SOBRE-EXPRESAN la queja. El que está contento con el
+   servicio no comenta; al que le fue mal sí. El nivel absoluto NO es "la opinión del
+   público".
 2. Las marcas MODERAN: borran comentarios. Lo que sobrevive está sesgado a positivo.
    Ojo que este sesgo empuja en dirección contraria al anterior, y no se cancelan
    de forma prolija.
    => Conclusión: estos números sirven para COMPARAR marcas entre sí y motivos entre
    sí, con el mismo sesgo aplicado a todos. No sirven como termómetro de satisfacción.
-   El tablero lo dice explícitamente. Si alguien lo presenta como "el X% de los
-   uruguayos está insatisfecho con el BSE", lo está usando mal.
+   El tablero lo dice explícitamente. Si alguien lo presenta como "el X% del público
+   está insatisfecho con la marca", lo está usando mal.
 
 Cómo se corre
 -------------
@@ -133,56 +135,141 @@ def filtrar(comentarios):
 
 # ══════════════════════════════════════════════════ Etapa 2: clasificación
 
-SISTEMA = """Sos analista de reputación de marca en Uruguay, especializado en seguros.
-Clasificás comentarios que el público dejó en posteos de aseguradoras.
+# Motivos que valen para cualquier categoría: no se derivan, se agregan siempre.
+# Los motivos ESPECÍFICOS del sector (la experiencia concreta con la empresa) se
+# derivan por corrida en _derivar_motivos.
+MOTIVOS_BASE = [
+    "Contenido de la marca: error o incoherencia",
+    "Debate sobre el tema del posteo",
+    "Consulta o pregunta",
+    "Apoyo o elogio a la marca",
+    "Evento / patrocinio / sorteo",
+    "No habla de la marca",
+    "Otro",
+]
+
+
+def _sistema(categoria):
+    """Prompt de clasificación, parametrizado por la categoría de la corrida.
+
+    Da la regla de prioridad (la experiencia concreta gana) sin nombrar motivos de
+    un sector puntual: los motivos específicos llegan en 'Motivos posibles'.
+    """
+    return """Sos analista de reputación de marca. Trabajás sobre la categoría: %s.
+Clasificás comentarios que el público dejó en los posteos de las marcas de esa categoría.
 
 SENTIMIENTO
 - Español rioplatense, con voseo, ironía y sarcasmo. "Excelente, solo 3 meses para
-  pagarme" es NEGATIVO, no positivo. Leé la intención, no las palabras sueltas.
-- Una pregunta ("¿cubre granizo?") es NEUTRA y relevante: es interés, no queja.
+  resolverme el trámite" es NEGATIVO, no positivo. Leé la intención, no las palabras sueltas.
+- Una pregunta ("¿tienen sucursal en Salto?") es NEUTRA y relevante: es interés, no queja.
 - Si el comentario no habla de la marca (charla entre usuarios, un chiste, un comentario
   sobre un jugador en un posteo de patrocinio), relevante=false: no ensucia el sentimiento.
 
-MOTIVO — aplicá esta regla en orden, y pará en la primera que corresponda:
+MOTIVO — elegí SIEMPRE uno de la lista "Motivos posibles" que te paso. Aplicá esta regla
+en orden y pará en la primera que corresponda:
 
-1. ¿El comentario relata una EXPERIENCIA CONCRETA de esta persona con la empresa
-   (un siniestro, un trámite, una llamada, un precio, un rechazo de cobertura, la app)?
-   → Entonces el motivo es esa experiencia. Tiene prioridad SIEMPRE, aunque el comentario
-     además elogie a la marca o hable del evento del posteo.
-     Ej: "Gracias por el evento, aunque todavía espero que me paguen el choque"
-         → Siniestro / demora en el pago  (no "Evento").
+1. ¿El comentario relata una EXPERIENCIA CONCRETA de esta persona con la empresa (un
+   trámite, una compra, una atención, un precio, un problema, un reclamo, la app)?
+   → el motivo es esa experiencia. Tiene prioridad SIEMPRE, aunque además elogie a la
+     marca o hable del evento del posteo.
+     Ej: "Gracias por el evento, aunque todavía espero que me resuelvan el reclamo"
+         → el motivo de experiencia, no "Evento / patrocinio / sorteo".
 
 2. ¿Es una pregunta o pedido de información?  → Consulta o pregunta.
 
 3. ¿La crítica es al CONTENIDO del posteo en sí — la marca publicó un dato falso, se
-   contradice (habla de seguridad y muestra a alguien sin cinturón), o la pieza está mal
-   hecha?  → Contenido de la marca: error o incoherencia.
+   contradice, o la pieza está mal hecha?  → Contenido de la marca: error o incoherencia.
 
-4. ¿Critica a la marca por ser empresa pública / estatal, por el uso de recursos del
-   Estado, o es una crítica política?  → Crítica a la empresa pública / al Estado.
+4. ¿Opina sobre el TEMA del posteo (el rubro, la coyuntura, la sociedad) sin criticar a
+   la marca?  → Debate sobre el tema del posteo. Suele ser relevante=true y sentimiento
+   neutro: es conversación, no queja contra la marca.
 
-5. ¿Opina sobre el TEMA del posteo (la seguridad vial, el tránsito, la sociedad) sin
-   criticar a la marca?  → Debate sobre el tema del posteo. Suele ser relevante=true y
-   sentimiento neutro: es conversación, no queja contra la marca.
-
-6. ¿No hay nada de lo anterior, y el comentario apoya/felicita a la marca en general
+5. ¿No hay nada de lo anterior, y el comentario apoya/felicita a la marca en general
    o a su campaña?  → Apoyo o elogio a la marca.
 
-7. ¿Habla del evento, patrocinio, sorteo o del deporte que la marca auspicia?
-   → Evento / patrocinio / sorteo.
+6. ¿Habla del evento, patrocinio o sorteo que la marca auspicia?  → Evento / patrocinio / sorteo.
 
 Usá 'Otro' lo menos posible: si te dan ganas de usarlo seguido, es que falta una categoría.
 
 El motivo importa más que el sentimiento: es lo que se convierte en decisión. Sé preciso.
 
-Devolvés exactamente un ítem por comentario, con el índice 'i' que te dieron."""
+Devolvés exactamente un ítem por comentario, con el índice 'i' que te dieron.""" % categoria
 
 
-def clasificar(comentarios, cfg, modelo, mezclar=False):
+def _muestra_estratificada(items, tope):
+    """Hasta `tope` items repartidos parejo entre marcas (round-robin).
+
+    Sin esto la inferencia queda dominada por la marca con más volumen: una muestra al
+    azar casi no ve a las chicas y los motivos sesgan hacia la grande. Repartir por marca
+    da una base representativa de la categoría entera.
+    """
+    porm = collections.defaultdict(list)
+    for it in items:
+        porm[it.get("marca", "?")].append(it)
+    for v in porm.values():
+        random.shuffle(v)
+    out, marcas = [], list(porm)
+    while len(out) < tope:
+        agregado = False
+        for m in marcas:
+            if porm[m]:
+                out.append(porm[m].pop())
+                agregado = True
+                if len(out) >= tope:
+                    break
+        if not agregado:
+            break
+    return out
+
+
+def _derivar_motivos(client, categoria, comentarios):
+    """Deriva los motivos de EXPERIENCIA propios del sector, mirando los comentarios.
+
+    Es el análogo de _derivar_territorios en analyze.py: en vez de una lista fija de
+    seguros ('Cobertura rechazada', etc.), pregunta cuáles son los temas concretos de la
+    relación de la gente con estas marcas y les suma MOTIVOS_BASE (los genéricos). Devuelve
+    la lista completa, o None si falla (ahí el caller usa la lista de config).
+    """
+    # Base ancha y balanceada por marca: hasta 400 comentarios repartidos parejo, para
+    # que los motivos no salgan de la marca con más conversación. Cuanto más ve, más
+    # estable el corte (antes eran 80 al azar — base demasiado frágil).
+    muestra = _muestra_estratificada(comentarios, 400)
+    listado = "\n".join("- [%s] %s" % (c.get("marca", "?"), (c["texto"] or "").replace("\n", " ")[:220])
+                        for c in muestra)
+    schema = {"type": "object",
+              "properties": {"motivos": {"type": "array", "items": {"type": "string"},
+                                         "minItems": 2, "maxItems": 8}},
+              "required": ["motivos"], "additionalProperties": False}
+    try:
+        r = client.messages.create(
+            model="claude-opus-4-8", max_tokens=1000,
+            thinking={"type": "adaptive"},
+            output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
+            system=("Sos analista de reputación de marca. Dada una categoría y una muestra de "
+                    "comentarios del público, definís los MOTIVOS DE EXPERIENCIA CONCRETA por los "
+                    "que la gente habla (bien o mal) de estas marcas: los temas tangibles de su "
+                    "relación con la empresa. Ej. en seguros: 'Cobertura rechazada / letra chica', "
+                    "'Siniestro / demora en el pago', 'Atención al cliente'. Ej. en un banco: "
+                    "'Comisiones y cargos', 'App / home banking', 'Atención en sucursal', 'Créditos "
+                    "y tasas'. 2 a 8 motivos, nombres cortos, mutuamente distintos, en español. NO "
+                    "incluyas motivos genéricos (consultas, elogios, eventos, debate): esos se "
+                    "agregan aparte."),
+            messages=[{"role": "user", "content":
+                       "Categoría: %s\n\nMuestra de comentarios:\n%s" % (categoria, listado)}],
+        )
+        txt = next(b.text for b in r.content if b.type == "text")
+        esp = [m.strip() for m in json.loads(txt)["motivos"] if m.strip()][:8]
+        return esp + MOTIVOS_BASE if esp else None
+    except Exception as e:
+        print("  [aviso] no se pudieron derivar motivos (%s): se usa la lista de config." % e,
+              file=sys.stderr)
+        return None
+
+
+def clasificar(comentarios, motivos, categoria, modelo, mezclar=False):
     """Devuelve {indice_global: etiqueta}. Nunca revienta: si un lote falla, sigue."""
     import anthropic
     client = anthropic.Anthropic()
-    motivos = cfg["comentarios"]["motivos"]
 
     schema = {
         "type": "object",
@@ -221,7 +308,7 @@ def clasificar(comentarios, cfg, modelo, mezclar=False):
                 thinking={"type": "adaptive"},
                 output_config={"effort": "low",
                                "format": {"type": "json_schema", "schema": schema}},
-                system=SISTEMA,
+                system=_sistema(categoria),
                 messages=[{"role": "user", "content":
                            "Motivos posibles: %s\n\nComentarios:\n%s" % (", ".join(motivos), listado)}],
             )
@@ -254,7 +341,7 @@ def clasificar(comentarios, cfg, modelo, mezclar=False):
 
 # ══════════════════════════════════════════════════ Etapa 3: validación
 
-def validar(comentarios, etiquetas, cfg, modelo):
+def validar(comentarios, etiquetas, motivos, categoria, modelo):
     """Segunda pasada independiente: mide si el clasificador es estable.
 
     MUESTREO ESTRATIFICADO, a propósito. Los negativos son ~15% del total, así que una
@@ -273,7 +360,7 @@ def validar(comentarios, etiquetas, cfg, modelo):
     sub = [comentarios[i] for i in muestra]
 
     print("\nValidando: segunda pasada sobre %d comentarios…" % len(sub))
-    segundas = clasificar(sub, cfg, modelo, mezclar=True)
+    segundas = clasificar(sub, motivos, categoria, modelo, mezclar=True)
 
     ac_sent = sum(1 for j, i in enumerate(muestra)
                   if j in segundas and segundas[j]["sentimiento"] == etiquetas[i]["sentimiento"])
@@ -283,7 +370,7 @@ def validar(comentarios, etiquetas, cfg, modelo):
 
     # Los motivos de los NEGATIVOS se miden aparte: son los únicos que van al informe.
     # Un motivo positivo ambiguo ("gracias por el evento") no cambia ninguna decisión;
-    # confundir "siniestro" con "atención al cliente" sí.
+    # confundir un motivo de queja con otro sí.
     negs = [(j, i) for j, i in enumerate(muestra)
             if j in segundas and etiquetas[i]["sentimiento"] == "negativo"]
     ac_neg = sum(1 for j, i in negs if segundas[j]["motivo"] == etiquetas[i]["motivo"])
@@ -367,9 +454,15 @@ def main():
     if not comentarios:
         return 0
 
-    # Etapa 2
+    # Etapa 2 — los motivos se DERIVAN del sector (como los territorios), no salen de una
+    # lista fija de seguros. Si la derivación falla, cae a la lista de config.
+    categoria = cfg.get("categoria", "la categoría")
+    import anthropic
+    motivos = _derivar_motivos(anthropic.Anthropic(), categoria, comentarios) \
+        or cfg["comentarios"]["motivos"]
+    print("\nMotivos de la categoría: %s" % ", ".join(motivos))
     print("\nClasificando con %s…" % args.modelo)
-    etiquetas = clasificar(comentarios, cfg, args.modelo)
+    etiquetas = clasificar(comentarios, motivos, categoria, args.modelo)
 
     for i, e in etiquetas.items():
         comentarios[i].update({k: e[k] for k in
@@ -393,7 +486,7 @@ def main():
     # Etapa 3
     escribir_auditoria(comentarios, etiquetas)
     if args.validar:
-        validar(comentarios, etiquetas, cfg, args.modelo)
+        validar(comentarios, etiquetas, motivos, categoria, args.modelo)
 
     print("\nSiguiente paso:  python3 analyze.py")
     return 0

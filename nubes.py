@@ -16,8 +16,6 @@ posiciones calculadas a mano que se pisan cuando cambia el texto.
 CRITERIOS
 =========
 · Solo comentarios del público (se excluyen las respuestas de la propia marca).
-· Se excluyen los comentarios de posteos de sorteo: son "@fulano vamos!!" y taparían
-  todo con menciones y con la palabra "sorteo".
 · Se sacan stopwords del español y el nombre de la propia marca (que aparecería siempre
   primera y no aporta nada).
 · Se separan las nubes por sentimiento cuando hay muestra: qué dicen los que elogian y

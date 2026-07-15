@@ -27,6 +27,8 @@ PRECIOS = {
     "ig_post":      {"usd_1000": 2.30, "fuente": "verificado contra factura Apify (jul-2026)"},
     "fb_post":      {"usd_1000": 5.00, "fuente": "verificado contra factura Apify (jul-2026)"},
     "ig_comment":   {"usd_1000": 2.30, "fuente": "verificado contra factura Apify (jul-2026)"},
+    "fb_comment":   {"usd_1000": 4.00, "fuente": "tarifa publicada del actor (sin verificar aún)"},
+    "x_comment":    {"usd_1000": 0.40, "fuente": "mismo actor que x_post (sin verificar aún)"},
     "x_post":       {"usd_1000": 0.40, "fuente": "tarifa publicada del actor (sin verificar aún)"},
     "ig_profile":   {"usd_1000": 2.30, "fuente": "verificado"},
     # Claude: medido con count_tokens sobre un lote real (3.186 tok in + ~2.100 out

@@ -127,6 +127,19 @@ def _etiqueta(slide, texto):
     r.font.color.rgb = BLANCO
 
 
+def _periodo_texto(dias):
+    """Período legible según los días de la ventana. Nada de 'un año' hardcodeado."""
+    if dias <= 35:
+        return "1 mes"
+    if dias <= 100:
+        return "3 meses"
+    if dias <= 200:
+        return "6 meses"
+    if dias <= 400:
+        return "1 año"
+    return "%d días" % dias
+
+
 def slide_portada(prs, d):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _fondo(s, NEGRO)
@@ -134,12 +147,13 @@ def slide_portada(prs, d):
         s.shapes.add_picture(LOGO, Inches(0.9), Inches(0.9), height=Inches(0.26))
     _texto(s, Inches(0.9), Inches(2.3), Inches(11.5), Inches(2.2),
            "MONITOR DE\nCATEGORÍA", 66, BLANCO, bold=True, espaciado=0.92)
-    _texto(s, Inches(0.9), Inches(4.6), Inches(10), Inches(0.7),
-           "Un año de conversación real en redes", 26, LAVANDA, italic=True, font=SERIF)
+    _texto(s, Inches(0.9), Inches(4.6), Inches(11), Inches(0.7),
+           "%s de actividad en redes" % _periodo_texto(d["meta"]["ventana"]["dias"]).capitalize(),
+           26, LAVANDA, italic=True, font=SERIF)
     v = d["meta"]["ventana"]
     _texto(s, Inches(0.9), Inches(6.3), Inches(10), Inches(0.5),
-           "%s   ·   %s a %s   ·   %s posteos relevados"
-           % (d["meta"]["categoria"], v["desde"], v["hasta"],
+           "%s a %s   ·   %s posteos relevados"
+           % (v["desde"], v["hasta"],
               "{:,}".format(d["meta"]["total_posts"]).replace(",", ".")),
            11, GRIS)
     return s
@@ -187,7 +201,7 @@ def slide_metodologia(prs, cliente, proyecto, d, cfg, rep=None):
            ["· %s posteos públicos" % "{:,}".format(m["total_posts"]).replace(",", "."),
             "· %d marcas con actividad" % m["marcas_activas"],
             "· Ventana: %s a %s" % (v["desde"], v["hasta"]),
-            "· %d días (12 meses)" % v["dias"],
+            "· %d días (%s)" % (v["dias"], _periodo_texto(v["dias"])),
             "",
             "Redes analizadas:"] +
            ["   %s — %d marcas" % (r, n) for r, n in redes.most_common()])
@@ -206,9 +220,7 @@ def slide_metodologia(prs, cliente, proyecto, d, cfg, rep=None):
         acuerdo = rep["acuerdo"]["pct"] if rep else None
         nlp = [
             "· %s comentarios del público" % "{:,}".format(m["comentarios"]).replace(",", "."),
-            "· Se excluyen los de sorteos",
-            "   (99% del total: son etiquetas",
-            "   a amigos, no opinión)",
+            "· Hasta %d comentarios por posteo" % cfg["comentarios"].get("por_posteo", 60),
             "",
             "Sentimiento — doble método:",
             "   1. Léxico rioplatense propio",
@@ -415,7 +427,8 @@ def build():
     #    y —tan importante como lo anterior— qué NO incluye el número.
     v = d["meta"]["ventana"]
     m = d["meta"]
-    global M_POSTEOS, M_SORTEO, M_COMENTARIOS, M_SENTIMIENTO, M_SENT_RANKING, \
+    periodo = _periodo_texto(v["dias"])   # "3 meses" / "6 meses" / "1 año" / "N días"
+    global M_POSTEOS, M_COMENTARIOS, M_SENTIMIENTO, M_SENT_RANKING, \
            M_MOTIVOS, M_IRONIA, M_NUBE, M_TERRITORIOS
 
     # Las redes se leen de los datos: si mañana se suma TikTok, la nota lo dice sola.
@@ -425,26 +438,17 @@ def build():
 
     M_POSTEOS = (
         "Metodología · Universo: %s posteos públicos de %s de las %d marcas relevadas, capturados "
-        "por API entre el %s y el %s (12 meses). Engagement = suma de likes, comentarios y "
+        "por API entre el %s y el %s (%s). Engagement = suma de likes, comentarios y "
         "compartidos de cada posteo. Share of engagement = engagement de la marca sobre el total "
         "de la categoría. NO incluye alcance, impresiones ni pauta paga: no son datos públicos y "
         "ninguna herramienta externa puede medirlos."
-        % (NF(m["total_posts"]), redes_txt, m["marcas_activas"], v["desde"], v["hasta"]))
-
-    M_SORTEO = (
-        "Metodología · Se clasifica como sorteo todo posteo cuyo texto contiene términos de "
-        "mecánica promocional (sorteo, sorteamos, participá, etiquetá, premio, entradas). "
-        "Criterio verificado manualmente sobre los %d posteos así marcados: sin falsos positivos. "
-        "Engagement orgánico = el de los posteos que NO son sorteo. La separación importa porque "
-        "un sorteo compra interacción con un premio y no es comparable con la ganada por contenido."
-        % (bse["sorteos"] if bse else 0))
+        % (NF(m["total_posts"]), redes_txt, m["marcas_activas"], v["desde"], v["hasta"], periodo))
 
     M_COMENTARIOS = (
-        "Metodología · Comentarios públicos de Instagram capturados por API sobre los posteos de "
-        "la ventana. Se EXCLUYEN los comentarios de posteos de sorteo (57.476 de 58.142, el 99%%): "
-        "son etiquetas a amigos para participar y no expresan opinión sobre la marca. Se excluyen "
-        "también las respuestas de la propia marca. Los %s restantes son la conversación real."
-        % NF(m.get("comentarios", 0)))
+        "Metodología · Comentarios públicos de Instagram sobre los posteos de la ventana. Se toman "
+        "hasta %d comentarios por posteo (para que un posteo viral no distorsione) y se descartan "
+        "las respuestas de la propia marca. Total analizado: %s."
+        % (cfg["comentarios"].get("por_posteo", 60), NF(m.get("comentarios", 0))))
 
     M_SENTIMIENTO = (
         "Metodología · Sentimiento neto = (positivos − negativos) / comentarios relevantes, sobre "
@@ -476,8 +480,8 @@ def build():
     M_NUBE = (
         "Metodología · Nube de frecuencia sobre los comentarios del público (no sobre los posteos de "
         "la marca): el tamaño de cada palabra es cuántas veces la gente la escribió. Sobre %d "
-        "comentarios relevantes. Se excluyen los comentarios de posteos de sorteo, las respuestas de "
-        "la propia marca, las @menciones, las palabras vacías (verbos y conectores sin contenido) y "
+        "comentarios relevantes. Se excluyen las respuestas de la propia marca, las @menciones, las "
+        "palabras vacías (verbos y conectores sin contenido) y "
         "el nombre de la marca. Layout de empaquetado, sin superposiciones.")
 
     M_NUBE_NEG = (
@@ -518,33 +522,19 @@ def build():
                         "star": b["star"]} for b in rank],
                       M_POSTEOS)
 
-        # ── 2. El asterisco: el engagement comprado
-        if bse["pct_sorteo"] >= 25:
-            rank_org = sorted(activas, key=lambda b: -b["sov_eng_org"])
-            pos_org = [b["n"] for b in rank_org].index(bse["n"]) + 1
-            aguanta = pos_org <= pos
-            slide_seccion(prs, "Pero cuidado\ncon ese número",
-                          "La mitad de esa interacción está comprada con premios.")
-            slide_dato(prs, cliente, proyecto, "Engagement de sorteo",
-                       "%d%%" % bse["pct_sorteo"],
-                       "del engagement de %s viene de sorteos" % bse["n"],
-                       ("Aun sacándolos sigue primero: el liderazgo es real."
-                        if aguanta else "Sin sorteos, cae al puesto %d." % pos_org),
-                       "%d de sus %d posteos son sorteos. Sin ellos, su share orgánico es %.1f%%."
-                       % (bse["sorteos"], bse["posts"], bse["sov_eng_org"]),
-                       nota=M_SORTEO)
-
-    # ── 3. El hallazgo: nadie conversa
+    # ── 3. La conversación de la categoría
     com_tot = sum(b["sent"]["comentarios"] for b in activas) if activas else 0
     if d["meta"].get("comentarios"):
-        slide_seccion(prs, "Nadie está\nconversando",
-                      "La categoría transmite. No dialoga.")
-        slide_dato(prs, cliente, proyecto, "Conversación real",
+        poca = com_tot < 1500
+        slide_seccion(prs, "Qué tan viva\nestá la categoría",
+                      "Cuánto le contesta la gente a las marcas." if not poca
+                      else "La categoría transmite más de lo que dialoga.")
+        slide_dato(prs, cliente, proyecto, "Conversación",
                    NF(com_tot),
-                   "comentarios en la ventana, entre todas las marcas juntas",
-                   "Fuera de los sorteos, la categoría está muda.",
-                   "El 99%% de los comentarios de la categoría sale de posteos de sorteo, "
-                   "y son etiquetas a amigos para participar: no son opinión sobre la marca.",
+                   "comentarios en la ventana, entre todas las marcas",
+                   ("Hay poco diálogo: espacio para quien lo abra." if poca
+                    else "Hay conversación real para leer."),
+                   "Comentarios del público sobre los posteos de las marcas relevadas.",
                    nota=M_COMENTARIOS)
 
         # Motivos de queja: lo accionable
@@ -689,10 +679,6 @@ def build():
     if ausentes:
         op.append({"t": "%s sin explorar" % ausentes[0],
                    "d": "Ninguna marca de la categoría tiene cuenta ahí. Es una red disponible."})
-    if bse and bse["pct_sorteo"] >= 40:
-        op.append({"t": "Bajar la dependencia del sorteo",
-                   "d": "Buena parte del engagement se compra con premios. El contenido tiene que "
-                        "sostenerse solo."})
     if not op:                    # nunca dejar la slide vacía
         op.append({"t": "Sin océanos evidentes",
                    "d": "La categoría está disputada en todos los frentes relevados."})

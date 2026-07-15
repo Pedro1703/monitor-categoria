@@ -59,6 +59,73 @@ def clasificar_reglas(texto, hashtags, lexicon):
     return mejor or "Sin clasificar"
 
 
+def _muestra_estratificada(items, tope):
+    """Hasta `tope` items repartidos parejo entre marcas (round-robin).
+
+    Sin esto, la inferencia queda dominada por la marca más prolífica: si una marca
+    publica 400 posteos y otra 20, una muestra al azar casi no ve a la chica y los
+    territorios/motivos derivados sesgan hacia la grande. Repartir por marca da una base
+    más representativa de la categoría, que es lo que se está tratando de caracterizar.
+    """
+    import random as _r, collections as _c
+    porm = _c.defaultdict(list)
+    for it in items:
+        porm[it.get("marca", "?")].append(it)
+    for v in porm.values():
+        _r.shuffle(v)
+    out, marcas = [], list(porm)
+    while len(out) < tope:
+        agregado = False
+        for m in marcas:
+            if porm[m]:
+                out.append(porm[m].pop())
+                agregado = True
+                if len(out) >= tope:
+                    break
+        if not agregado:
+            break
+    return out
+
+
+def _derivar_territorios(client, categoria, posts):
+    """Le pide a Claude los territorios de comunicación propios de la categoría.
+
+    Es lo que hace al informe genérico: en vez de un lexicón fijo (que era de seguros),
+    los territorios se deducen del sector real y de una muestra amplia y balanceada de lo
+    que las marcas publican. Devuelve una lista de 6-9 nombres cortos, o None si falla.
+    """
+    # Base ancha: hasta 300 posteos repartidos entre marcas (con Opus y 1M de contexto
+    # el techo real es el presupuesto, no el modelo). Cuanto más ve, menos frágil el corte.
+    muestra = _muestra_estratificada(posts, 300)
+    listado = "\n".join("- [%s] %s" % (p.get("marca", "?"), (p["texto"] or "").replace("\n", " ")[:220])
+                        for p in muestra)
+    schema = {"type": "object",
+              "properties": {"territorios": {"type": "array", "items": {"type": "string"},
+                                             "minItems": 5, "maxItems": 9}},
+              "required": ["territorios"], "additionalProperties": False}
+    try:
+        r = client.messages.create(
+            model="claude-opus-4-8", max_tokens=1000,
+            thinking={"type": "adaptive"},
+            output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
+            system=("Sos estratega de comunicación de marca. Dada una categoría y una muestra de "
+                    "posteos, definís los TERRITORIOS DE COMUNICACIÓN de esa categoría: los grandes "
+                    "temas o ángulos con los que las marcas le hablan a su público (ej. en seguros: "
+                    "'Institucional', 'Producto', 'Prevención'; en un banco: 'Beneficios', "
+                    "'Educación financiera', 'Patrocinios'). 6 a 9 territorios, nombres cortos, "
+                    "mutuamente distintos, en español."),
+            messages=[{"role": "user", "content":
+                       "Categoría: %s\n\nMuestra de posteos:\n%s" % (categoria, listado)}],
+        )
+        txt = next(b.text for b in r.content if b.type == "text")
+        terr = json.loads(txt)["territorios"]
+        return [t.strip() for t in terr if t.strip()][:9] or None
+    except Exception as e:
+        print("  [aviso] no se pudieron derivar territorios (%s): se usa el lexicón." % e,
+              file=sys.stderr)
+        return None
+
+
 def clasificar_ia(posts, lexicon, cfg):
     """
     Capa opcional: reclasifica cada posteo con Claude y le agrega sentimiento.
@@ -78,9 +145,16 @@ def clasificar_ia(posts, lexicon, cfg):
         return
 
     client = anthropic.Anthropic()
-    territorios = list(lexicon)
-    LOTE = 40
     con_texto = [p for p in posts if (p.get("texto") or "").strip()]
+
+    # Los territorios se DERIVAN del sector, no salen de un lexicón fijo de seguros.
+    # Primero se le pide a Claude que proponga los territorios de comunicación propios
+    # de esta categoría, mirando una muestra real de posteos. Así el informe se ajusta
+    # a bancos, autos, política o lo que sea, sin tocar código.
+    territorios = _derivar_territorios(client, cfg["categoria"], con_texto) or list(lexicon)
+    globals()["TERRITORIOS_DERIVADOS"] = territorios
+    LOTE = 40
+    print("Territorios de la categoría: %s" % ", ".join(territorios))
     print("Clasificando %d posteos con Claude…" % len(con_texto))
 
     schema = {
@@ -185,15 +259,11 @@ def build(usar_ia):
     perfiles_raw = json.load(open(os.path.join(RAW_DIR, "profiles.json"), encoding="utf-8"))
     perfiles, ventana = perfiles_raw["perfiles"], perfiles_raw["ventana"]
 
-    lexicon = {k: v for k, v in cfg["territorios"].items() if not k.startswith("_")}
-    pat_sorteo = re.compile(cfg["comentarios"]["patron_sorteo"], re.I)
+    lexicon = {k: v for k, v in cfg.get("territorios", {}).items() if not k.startswith("_")}
     for p in posts:
         p["eng"] = p["likes"] + p["comments"] + p["shares"]
         p["territorio"] = clasificar_reglas(p["texto"], p["hashtags"], lexicon)
         p["sentimiento"] = "neutro"
-        # Un sorteo compra interacción con un premio. Mezclarlo con el engagement
-        # ganado por contenido infla a quien más regala y engaña al que lee el tablero.
-        p["sorteo"] = bool(pat_sorteo.search(p.get("texto") or ""))
     if usar_ia:
         clasificar_ia(posts, lexicon, cfg)
 
@@ -203,8 +273,6 @@ def build(usar_ia):
     meses_orden = sorted({p["fecha"][:7] for p in posts})
     total_posts = len(posts)
     total_eng = sum(p["eng"] for p in posts) or 1
-    organicos = [p for p in posts if not p["sorteo"]]
-    total_eng_org = sum(p["eng"] for p in organicos) or 1
 
     marcas = []
     for b in cfg["brands"]:
@@ -218,11 +286,6 @@ def build(usar_ia):
         for p in suyos:
             eng_mes[p["fecha"][:7]] += p["eng"]
 
-        # Engagement orgánico: el que la marca se ganó, sin regalar nada.
-        org = [p for p in suyos if not p["sorteo"]]
-        eng_org = sum(p["eng"] for p in org)
-        sorteos_n = len(suyos) - len(org)
-
         top = sorted(suyos, key=lambda p: -p["eng"])[:5]
         marcas.append({
             "n": nombre,
@@ -232,12 +295,6 @@ def build(usar_ia):
             "seguidores": seguidores,
             "posts": len(suyos),
             "eng": eng,
-            "sorteos": sorteos_n,
-            "eng_org": eng_org,
-            # Qué parte del engagement de la marca vino de regalar premios.
-            "pct_sorteo": round((eng - eng_org) / eng * 100) if eng else 0,
-            "sov_eng_org": round(eng_org / total_eng_org * 100, 1),
-            "eng_rate_org": round(eng_org / len(org) / seguidores * 100, 2) if org and seguidores else 0,
             "sent": resumen_sentimiento(comentarios, nombre),
             "eng_prom": round(eng / len(suyos)) if suyos else 0,
             # Tasa de engagement: engagement promedio por posteo sobre la base de
@@ -295,33 +352,15 @@ def build(usar_ia):
     if bse and bse["posts"]:
         nombres_eng = [m["n"] for m in sorted(activas, key=lambda m: -m["sov_eng"])]
         pos = nombres_eng.index(principal) + 1 if principal in nombres_eng else len(nombres_eng)
-        nombres_org = [m["n"] for m in sorted(activas, key=lambda m: -m["sov_eng_org"])]
-        pos_org = nombres_org.index(principal) + 1 if principal in nombres_org else len(nombres_org)
         alertas.append({"lvl": "pos" if pos == 1 else "neg",
                         "t": "%s es #%d en share of engagement de la categoría (%.1f%%)."
                              % (principal, pos, bse["sov_eng"])})
-        # Cuánto del engagement se compró con premios. Ojo: solo es mala noticia si al
-        # sacar los sorteos la marca se cae. Si aguanta, es fuerza real y hay que decirlo.
-        if bse["pct_sorteo"] >= 40:
-            if pos_org > pos:
-                alertas.append({"lvl": "neg",
-                                "t": "El %d%% del engagement de %s viene de sorteos. Sin regalar "
-                                     "nada cae del puesto #%d al #%d: el liderazgo está comprado."
-                                     % (bse["pct_sorteo"], principal, pos, pos_org)})
-            else:
-                alertas.append({"lvl": "pos",
-                                "t": "El %d%% del engagement de %s viene de sorteos (%d posteos), "
-                                     "pero aun sacándolos sigue #%d con %.1f%% de share orgánico: "
-                                     "el liderazgo es real, no comprado."
-                                     % (bse["pct_sorteo"], principal, bse["sorteos"], pos_org,
-                                        bse["sov_eng_org"])})
-        # La conversación real de la categoría es ínfima: eso es una oportunidad.
+        # Conversación de la categoría: si es baja, es una oportunidad.
         com_reales = sum(m["sent"]["comentarios"] for m in activas)
         if comentarios and com_reales:
-            alertas.append({"lvl": "neg",
-                            "t": "Toda la categoría junta generó %d comentarios reales en la ventana "
-                                 "(fuera de sorteos). Nadie está conversando: hay lugar para el "
-                                 "primero que lo haga." % com_reales})
+            alertas.append({"lvl": "neg" if com_reales < 1500 else "pos",
+                            "t": "La categoría generó %d comentarios en la ventana entre todas las "
+                                 "marcas." % com_reales})
         lider_rate = max(activas, key=lambda m: m["eng_rate"])
         if lider_rate["n"] != principal:
             alertas.append({"lvl": "neg",
@@ -396,7 +435,7 @@ def build(usar_ia):
 
     print("OK · %d posteos · %d marcas activas · ventana %s → %s"
           % (total_posts, len(activas), ventana["desde"], ventana["hasta"]))
-    print("Abrí Monitor_BSE.html para ver el tablero.")
+    print("Abrí el tablero para ver los resultados.")
     return 0
 
 

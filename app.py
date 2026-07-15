@@ -26,6 +26,43 @@ import costos  # noqa: E402
 import auth  # noqa: E402
 
 CONFIG_PATH = os.path.join(HERE, "monitor.config.json")
+CONSULTAS = os.path.join(HERE, "raw", "consultas.json")
+
+
+def _consultas_leer():
+    if not os.path.exists(CONSULTAS):
+        return []
+    try:
+        return json.load(open(CONSULTAS, encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _consulta_guardar(quien, body):
+    """Registra los parámetros de una corrida para poder repetirla sin retipear.
+
+    Se guarda todo lo necesario para relanzar: marcas, redes, período, comentarios,
+    IA y muestra. Se deduplica por firma (misma consulta no se anota dos veces)."""
+    import time as _t
+    reg = {"cuando": _t.strftime("%Y-%m-%d %H:%M"), "quien": quien,
+           "categoria": (body.get("categoria") or "").strip() or _categoria_de(body["cuentas"]),
+           "cuentas": body["cuentas"], "redes": body["redes"], "dias": int(body["dias"]),
+           "comentarios": bool(body.get("comentarios")), "ia": bool(body.get("ia")),
+           "muestra": float(body.get("muestra", 1.0))}
+    firma = json.dumps([reg["cuentas"], reg["redes"], reg["dias"],
+                        reg["comentarios"], reg["ia"], reg["muestra"]], sort_keys=True)
+    prev = [c for c in _consultas_leer()
+            if json.dumps([c["cuentas"], c["redes"], c["dias"], c["comentarios"],
+                           c["ia"], c.get("muestra", 1.0)], sort_keys=True) != firma]
+    prev.insert(0, reg)
+    os.makedirs(os.path.dirname(CONSULTAS), exist_ok=True)
+    json.dump(prev[:30], open(CONSULTAS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
+def _categoria_de(cuentas):
+    ppal = next((c["n"] for c in cuentas if c.get("star")), None)
+    otras = [c["n"] for c in cuentas if not c.get("star")]
+    return "%s vs %s" % (ppal or "?", ", ".join(otras[:3])) if otras else (ppal or "?")
 RAW_DIR = os.path.join(HERE, "raw")
 # En la nube el puerto lo asigna el host (Render/Fly usan PORT). Local: 8765.
 PUERTO = int(os.environ.get("PORT") or os.environ.get("JAVIA_PUERTO") or 8765)
@@ -47,7 +84,7 @@ def log(msg):
 
 # ────────────────────────────────────────────────── estimación
 
-def estimar(cuentas, redes, dias, con_comentarios, con_ia=True):
+def estimar(cuentas, redes, dias, con_comentarios, con_ia=True, muestra=1.0):
     """Estima volumen y costo. NO gasta nada.
 
     Principio: distinguir siempre lo MEDIDO de lo SUPUESTO, y decirlo. El usuario
@@ -99,27 +136,50 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True):
         lineas.append({"k": "Posteos de X / Twitter", "n": tot_x, "usd": round(c_x, 2),
                        "precio": "US$ %.2f /1.000" % pr_x, "fuente": f_x})
 
-    com = {"n": 0, "exacto": False, "sorteos_excluidos": 0, "usd_sorteos": 0}
+    com = {"n": 0, "exacto": False}
     if con_comentarios:
-        # OJO: el conteo exacto solo vale para las marcas que REALMENTE se capturaron.
-        # Si el usuario pide una marca nueva, no se le puede dar el conteo de otra.
-        marcas_ig = [c["n"] for c in cuentas if c.get("ig") and "ig" in redes]
-        reales = _comentarios_reales(marcas_ig)
-        if reales is not None:
-            com["n"], com["sorteos_excluidos"] = reales
-            com["exacto"] = True     # no es estimación: es el conteo real de ESTAS marcas
-        else:
-            # Sin captura previa de estas marcas: la categoría conversa poquísimo
-            # (0,8 comentarios por posteo, fuera de sorteos). El supuesto más frágil.
-            com["n"] = int(tot_ig * 0.8)
+        # Ahora se bajan comentarios de TODAS las redes, no solo Instagram. Cada red tiene
+        # su actor y su precio. El conteo exacto (de la captura previa) solo vale para las
+        # marcas realmente capturadas EN ESA RED; si falta alguna, esa red se estima.
+        def _vol(red_nombre, flag, factor_est, tot_posts):
+            marcas_r = [c["n"] for c in cuentas if c.get(flag) and flag in redes]
+            if not marcas_r:
+                return 0, True
+            reales = _comentarios_por_red(marcas_r, red_nombre)
+            if reales is not None:
+                return reales, True
+            return int(tot_posts * factor_est), False   # sin captura: estimación declarada
 
-        pr_c, f_c = costos.precio("ig_comment")
-        c_com = com["n"] / 1000 * pr_c
+        ig_com, ig_ex = _vol("Instagram", "ig", 5, tot_ig)
+        fb_com, fb_ex = _vol("Facebook", "fb", 4, tot_fb)
+        # X va por búsqueda 'to:handle', con tope chico por marca: se estima conservador.
+        marcas_x = [c["n"] for c in cuentas if c.get("x") and "x" in redes]
+        x_com = min(int(tot_x * 3), 60 * len(marcas_x)) if marcas_x else 0
+
+        com["exacto"] = ig_ex and fb_ex and (ig_com + fb_com > 0)
+        com["total"] = ig_com + fb_com + x_com
+        # La muestra reduce la descarga por posteo (IG+FB); X no se muestrea (es marginal).
+        ig_p = int(round(ig_com * muestra))
+        fb_p = int(round(fb_com * muestra))
+        com["n"] = ig_p + fb_p + x_com
+        com["muestra"] = muestra
+
+        pr_ig, _ = costos.precio("ig_comment")
+        pr_fb, _ = costos.precio("fb_comment")
+        pr_x, _ = costos.precio("x_comment")
+        c_com = ig_p / 1000 * pr_ig + fb_p / 1000 * pr_fb + x_com / 1000 * pr_x
         costo += c_com
-        lineas.append({"k": "Comentarios (sin sorteos)", "n": com["n"], "usd": round(c_com, 2),
-                       "precio": "US$ %.2f /1.000" % pr_c,
-                       "fuente": "conteo EXACTO de la captura previa" if com["exacto"] else f_c})
-        com["usd_sorteos"] = round(com["sorteos_excluidos"] / 1000 * pr_c, 2)
+        detalle = " · ".join(x for x in [
+            "IG %d" % ig_p if ig_p else "",
+            "FB %d" % fb_p if fb_p else "",
+            "X %d" % x_com if x_com else ""] if x)
+        etiqueta = "Comentarios (%s)" % detalle if detalle else "Comentarios"
+        if muestra < 0.999:
+            etiqueta += " · muestra %d%%" % round(muestra * 100)
+        lineas.append({"k": etiqueta, "n": com["n"], "usd": round(c_com, 2),
+                       "precio": "IG %.2f · FB %.2f · X %.2f /1.000" % (pr_ig, pr_fb, pr_x),
+                       "fuente": "conteo exacto de la captura previa" if com["exacto"]
+                                 else "volumen estimado (sin captura previa)"})
 
         if con_ia:
             pr_ia, f_ia = costos.precio("clasif_opus")
@@ -140,9 +200,22 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True):
              + frac_supuesta * (costos.BANDA_SIN_HISTORIA - costos.BANDA_CON_HISTORIA))
     hay_hist = bool(hist)
 
+    # ¿Cuánto costaría procesando TODO? Con eso el front decide si ofrecer la opción de
+    # muestra (umbral US$ 100). Ofrecer, no imponer: por defecto se hace todo.
+    costo_full = costo
+    if con_comentarios and com.get("muestra", 1.0) < 0.999:
+        extra = com["total"] - com["n"]
+        pr_c, _ = costos.precio("ig_comment")
+        costo_full = costo + extra / 1000 * pr_c
+        if con_ia:
+            pr_ia, _ = costos.precio("clasif_opus")
+            costo_full += extra / 1000 * pr_ia
+
     return {
         "filas": filas,
         "lineas": lineas,
+        "costo_full": round(costo_full, 2),
+        "ofrecer_muestra": costo_full > 100 and con_comentarios,
         "posts_ig": tot_ig, "posts_fb": tot_fb, "posts_x": tot_x,
         "comentarios": com,
         "costo_total": round(costo, 2),
@@ -187,28 +260,35 @@ def _historico():
 
 
 def _comentarios_reales(marcas):
-    """Comentarios NO-sorteo que existen de verdad, SOLO para las marcas pedidas.
+    """Comentarios que existen de verdad, SOLO para las marcas pedidas.
 
     Devuelve None si alguna de esas marcas no está en la captura previa: en ese caso
     no hay conteo exacto que dar, y hay que estimar. Antes esto devolvía el total de
     la captura sin mirar de qué marcas era — o sea, le daba a una marca nueva el
     número de otra. Un estimado equivocado es peor que un estimado con banda ancha.
     """
+    return _comentarios_por_red(marcas, "Instagram")
+
+
+def _comentarios_por_red(marcas, red):
+    """Conteo exacto de comentarios (con el tope por posteo) de esas marcas en esa red.
+
+    Devuelve None si alguna de las marcas no está capturada en esa red: sin captura no
+    hay conteo exacto, hay que estimar. Un estimado con banda ancha es mejor que darle a
+    una marca el número de otra.
+    """
     ruta = os.path.join(RAW_DIR, "posts.jsonl")
     if not os.path.exists(ruta) or not marcas:
         return None
     try:
         cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
-        pat = re.compile(cfg["comentarios"]["patron_sorteo"], re.I)
         posts = [json.loads(l) for l in open(ruta, encoding="utf-8") if l.strip()]
-        capturadas = {p["marca"] for p in posts if p["red"] == "Instagram"}
+        capturadas = {p["marca"] for p in posts if p["red"] == red}
         if not set(marcas).issubset(capturadas):
-            return None          # hay marcas que nunca medimos: no hay conteo exacto
-        ig = [p for p in posts if p["red"] == "Instagram" and p["marca"] in marcas]
+            return None
+        sel = [p for p in posts if p["red"] == red and p["marca"] in marcas]
         tope = cfg["comentarios"]["por_posteo"]
-        reales = sum(min(p["comments"], tope) for p in ig if not pat.search(p.get("texto") or ""))
-        sorteos = sum(p["comments"] for p in ig if pat.search(p.get("texto") or ""))
-        return reales, sorteos
+        return sum(min(p["comments"], tope) for p in sel)
     except Exception:
         return None
 
@@ -236,7 +316,7 @@ def _clasificar_error(texto):
     return None
 
 
-def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8, reanudar=False):
+def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8, reanudar=False, muestra=1.0, categoria=None):
     """Ejecuta el pipeline completo en un hilo, reportando el paso actual."""
     ESTADO.update({"corriendo": True, "paso": "Preparando…", "paso_num": 0,
                    "log": [], "fin": None, "error": None, "error_tipo": None,
@@ -248,6 +328,8 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
         if not reanudar:
             cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
             cfg["ventana_dias"] = dias
+            if categoria:
+                cfg["categoria"] = categoria
             cfg["brands"] = [{
                 "n": c["n"], "star": c.get("star", False),
                 "ig": c.get("ig") if "ig" in redes else None,
@@ -269,7 +351,10 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
                                                    "--redes", ",".join(redes)],
                   os.path.join(RAW_DIR, "posts.jsonl"))]
         if con_comentarios:
-            pasos.append(("Bajando comentarios del público", [sys.executable, "fetch_comments.py"],
+            cmd_com = [sys.executable, "fetch_comments.py"]
+            if muestra < 0.999:
+                cmd_com += ["--muestra", str(muestra)]
+            pasos.append(("Bajando comentarios del público", cmd_com,
                           os.path.join(RAW_DIR, "comments.jsonl")))
             if con_ia:
                 pasos.append(("Analizando el sentimiento", [sys.executable, "sentimiento.py"],
@@ -421,6 +506,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if r == "/logo.png":
             return self._archivo(os.path.join(HERE, "brand", "logo-ciudadana.png"), "image/png")
+        if r == "/api/consultas":
+            return self._json({"consultas": _consultas_leer()})
         if r == "/api/estado":
             cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
             return self._json({
@@ -480,7 +567,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if r == "/api/estimar":
             return self._json(estimar(body["cuentas"], body["redes"], int(body["dias"]),
-                                      bool(body.get("comentarios")), bool(body.get("ia"))))
+                                      bool(body.get("comentarios")), bool(body.get("ia")),
+                                      float(body.get("muestra", 1.0))))
 
         if r == "/api/reanudar":
             if ESTADO["corriendo"]:
@@ -505,7 +593,8 @@ class Handler(BaseHTTPRequestHandler):
 
             # El freno: se evalúa sobre el costo MÁXIMO estimado, no el promedio.
             est = estimar(body["cuentas"], body["redes"], int(body["dias"]),
-                          bool(body.get("comentarios")), bool(body.get("ia")))
+                          bool(body.get("comentarios")), bool(body.get("ia")),
+                          float(body.get("muestra", 1.0)))
             ok, motivo = auth.puede_correr(est["costo_max"])
             if not ok:
                 return self._json({"error": motivo, "tope": True}, 402)
@@ -513,12 +602,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.quien(), est["costo_max"],
                 "%d marcas · %d días · %s" % (len(body["cuentas"]), int(body["dias"]),
                                               "+".join(body["redes"])))
+            _consulta_guardar(self.quien(), body)
             threading.Thread(target=correr, daemon=True, kwargs={
                 "cuentas": body["cuentas"], "redes": body["redes"],
                 "dias": int(body["dias"]), "con_comentarios": bool(body.get("comentarios")),
                 "con_ia": bool(body.get("ia")),
                 "con_informe": bool(body.get("informe", True)),
                 "eta_min": est.get("eta_min", 8),
+                "muestra": float(body.get("muestra", 1.0)),
+                "categoria": (body.get("categoria") or "").strip() or _categoria_de(body["cuentas"]),
             }).start()
             return self._json({"ok": True})
 

@@ -136,6 +136,30 @@ def main():
         for c in trampas[:5]:
             print("      · [%s] %s" % (c["marca"], c["texto"][:78].replace("\n", " ")))
 
+    # ── 2b. Tercer voto OPCIONAL: RoBERTuito local (gratis, si está instalado)
+    # No cambia ningún número del informe: solo agrega una medida de acuerdo con un
+    # segundo modelo ENTRENADO. Si pysentimiento no está, esto no corre y listo.
+    import nlp_local
+    if nlp_local.disponible():
+        print("\n" + "═" * 74)
+        print("  TERCER VOTO — RoBERTuito local (modelo entrenado con 500M de tweets)")
+        print("═" * 74)
+        preds = nlp_local.sentimiento([c["texto"] for c in rel])
+        if preds:
+            for c, p in zip(rel, preds):
+                c["rob_sent"] = p
+            ac_rob = sum(1 for c in rel if c.get("rob_sent") == c["sentimiento"])
+            ac_rob_lex = sum(1 for c in rel if c.get("rob_sent") == c["lex_sent"])
+            tres = sum(1 for c in rel
+                       if c.get("rob_sent") == c["sentimiento"] == c["lex_sent"])
+            print("  Coinciden RoBERTuito y Claude : %d  (%.0f%%)" % (ac_rob, ac_rob / n * 100))
+            print("  Coinciden RoBERTuito y lexicón: %d  (%.0f%%)" % (ac_rob_lex, ac_rob_lex / n * 100))
+            print("  Los TRES coinciden            : %d  (%.0f%%)  ← el núcleo más confiable"
+                  % (tres, tres / n * 100))
+    else:
+        print("\n  (RoBERTuito local no instalado — se omite el tercer voto. "
+              "Para activarlo: pip install pysentimiento)")
+
     # ── 3. Sentimiento por marca, con los dos métodos lado a lado
     print("\n" + "═" * 74)
     print("  SENTIMIENTO POR MARCA — los dos métodos, uno al lado del otro")
@@ -160,22 +184,11 @@ def main():
 
     # ── 4. Nubes de palabras por marca (TF-IDF): la marca vs. la gente
     #
-    # Se calculan DOS nubes de marca, y la diferencia entre ambas es un hallazgo:
-    #  · con sorteos    → lo que la marca más dice, sin filtro
-    #  · sin sorteos    → su voz real de comunicación
-    # En BSE, los términos más distintivos con sorteos son "comunicaremos",
-    # "solicitarles", "indicado": la LETRA CHICA de sus propias bases y condiciones.
-    # Es decir: lo que más lo distingue de la competencia es el reglamento del sorteo,
-    # no su mensaje. Sacando los sorteos aparece la voz que de verdad construye marca.
-    cfg = json.load(open(os.path.join(HERE, "monitor.config.json"), encoding="utf-8"))
-    pat_sorteo = re.compile(cfg["comentarios"]["patron_sorteo"], re.I)
-    for p in posts:
-        p["sorteo"] = bool(pat_sorteo.search(p.get("texto") or ""))
-
+    # Dos vocabularios distintivos por marca: lo que la marca dice en sus posteos
+    # y lo que la gente le responde en los comentarios. La brecha entre ambos —de
+    # qué habla la marca vs. de qué habla su audiencia— es el hallazgo.
     marcas = sorted({p["marca"] for p in posts})
     nube_marca = tfidf({m: [p["texto"] for p in posts if p["marca"] == m] for m in marcas})
-    nube_organica = tfidf({m: [p["texto"] for p in posts
-                               if p["marca"] == m and not p["sorteo"]] for m in marcas})
     nube_gente = tfidf({m: [c["texto"] for c in coments if c["marca"] == m]
                         for m in marcas if any(c["marca"] == m for c in coments)})
 
@@ -184,24 +197,14 @@ def main():
     print("═" * 74)
     for m in marcas:
         pm = nube_marca.get(m, [])
-        po = nube_organica.get(m, [])
         pg = nube_gente.get(m, [])
         if not pm and not pg:
             continue
         print("\n  ── %s" % m)
-        top_con = [x["w"] for x in pm[:9]]
-        top_org = [x["w"] for x in po[:9]]
         if pm:
-            print("     TODO lo que dice     : %s" % ", ".join(top_con))
-        if po and set(top_con) != set(top_org):
-            print("     SIN sorteos (su voz) : %s" % ", ".join(top_org))
+            print("     LO QUE LA MARCA DICE : %s" % ", ".join(x["w"] for x in pm[:9]))
         if pg:
             print("     LA GENTE le responde : %s" % ", ".join(x["w"] for x in pg[:9]))
-        # ¿La voz de la marca está tapada por la letra chica de sus sorteos?
-        contaminada = len(set(top_con) - set(top_org))
-        if pm and po and contaminada >= 4:
-            print("     ⚠ %d de sus 9 términos más distintivos vienen de los sorteos:" % contaminada)
-            print("       lo que más lo diferencia de la competencia es el reglamento, no el mensaje.")
 
     # ── 5. Salidas
     salida = {
@@ -211,7 +214,6 @@ def main():
                                        for c in trampas[:15]]},
         "por_marca": reporte_marcas,
         "nube_marca": nube_marca,
-        "nube_organica": nube_organica,
         "nube_gente": nube_gente,
     }
     json.dump(salida, open(os.path.join(HERE, "reporte_sentimiento.json"), "w",

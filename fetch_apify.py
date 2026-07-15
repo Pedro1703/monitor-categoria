@@ -287,7 +287,7 @@ def main():
 
     desde_dt = datetime.now(timezone.utc) - timedelta(days=dias)
     desde = desde_dt.strftime("%Y-%m-%d")
-    print("Monitor BSE · ventana: %s → hoy (%d días)\n" % (desde, dias))
+    print("Captura · ventana: %s → hoy (%d días)\n" % (desde, dias))
 
     os.makedirs(RAW_DIR, exist_ok=True)
     posts, perfiles = [], {}

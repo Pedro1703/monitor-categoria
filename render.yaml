@@ -1,14 +1,22 @@
-# Deploy de JavIA en Render — PLAN GRATUITO, sin tarjeta.
+# Deploy del Monitor en Render — PLAN PAGO (Standard), robusto.
 #
-# El plan free NO pide tarjeta. Su "pero": la app se duerme tras 15 min sin uso y
-# tarda ~40 s en despertar cuando alguien entra. Para un equipo que la usa de a ratos
-# es transparente. Si quisieras que nunca se duerma, ahí sí hace falta el plan pago.
+# Por qué Standard y no free:
+#   · RAM: el motor de NLP local (RoBERTuito / pysentimiento) necesita ~2 GB. En el free
+#     (512 MB) no entra; en Standard sí, y ahí el "tercer voto" de validación corre gratis.
+#   · No se duerme: la app queda siempre despierta (el free se dormía a los 15 min).
+#   · Disco persistente: los datos scrapeados, la bitácora de gasto y el log de consultas
+#     sobreviven a los redeploys y reinicios (en el free vivían en memoria y se perdían).
+#     Con esto el TOPE MENSUAL de gasto ya no se reinicia con cada arranque: es real.
 services:
   - type: web
-    name: javia
+    name: monitor-categoria
     runtime: docker
-    plan: free
+    plan: standard          # 2 GB RAM · no se duerme · admite disco
     healthCheckPath: /login
+    disk:
+      name: datos
+      mountPath: /app/raw   # TODO lo durable vive acá y persiste: raw/, costos.json,
+      sizeGB: 5             # bitacora.json, consultas.json y el cache del modelo (raw/hf).
     envVars:
       - key: JAVIA_PASSWORD          # se carga a mano en el panel; nunca en el código
         sync: false
@@ -22,7 +30,3 @@ services:
         value: "25"
       - key: JAVIA_TOPE_MES
         value: "100"
-# Nota: el plan free no tiene disco persistente. Los datos scrapeados y la bitácora
-# de gasto viven en memoria y se reinician cuando la app se duerme. Consecuencia:
-# el tope POR CORRIDA (25 USD) sigue firme siempre; el tope MENSUAL se reinicia con
-# cada arranque. Para un equipo chico alcanza — si no, se pasa a un plan con disco.

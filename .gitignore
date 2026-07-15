@@ -8,6 +8,8 @@ monitor.json
 monitor.data.js
 reporte_sentimiento.json
 Informe_Ciudadana.pptx
+Informe_Ciudadana.pdf
+*.pdf
 
 # ── Temporales de Office
 ~$*
