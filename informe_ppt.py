@@ -148,7 +148,7 @@ def slide_portada(prs, d):
     _texto(s, Inches(0.9), Inches(2.3), Inches(11.5), Inches(2.2),
            "MONITOR DE\nCATEGORÍA", 66, BLANCO, bold=True, espaciado=0.92)
     _texto(s, Inches(0.9), Inches(4.6), Inches(11), Inches(0.7),
-           "%s de actividad en redes" % _periodo_texto(d["meta"]["ventana"]["dias"]).capitalize(),
+           "¿Qué dice la people?",
            26, LAVANDA, italic=True, font=SERIF)
     v = d["meta"]["ventana"]
     _texto(s, Inches(0.9), Inches(6.3), Inches(10), Inches(0.5),
