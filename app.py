@@ -236,23 +236,26 @@ def _clasificar_error(texto):
     return None
 
 
-def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8):
+def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_min=8, reanudar=False):
     """Ejecuta el pipeline completo en un hilo, reportando el paso actual."""
     ESTADO.update({"corriendo": True, "paso": "Preparando…", "paso_num": 0,
                    "log": [], "fin": None, "error": None, "error_tipo": None,
-                   "inicio": time.time(), "eta_min": eta_min})
+                   "inicio": time.time(), "eta_min": eta_min,
+                   "flags": {"comentarios": con_comentarios, "ia": con_ia, "informe": con_informe}})
     try:
-        cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
-        cfg["ventana_dias"] = dias
-        # Las cuentas que eligió el usuario reemplazan a las de la config.
-        cfg["brands"] = [{
-            "n": c["n"], "star": c.get("star", False),
-            "ig": c.get("ig") if "ig" in redes else None,
-            "fb": c.get("fb") if "fb" in redes else None,
-            "x": c.get("x") if "x" in redes else None,
-            "tt": c.get("tt") if "tt" in redes else None,
-        } for c in cuentas]
-        json.dump(cfg, open(CONFIG_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        # Al reanudar se reusa la config que quedó de la corrida fallida: no se rearman
+        # las marcas ni se reescribe nada (los datos scrapeados siguen siendo válidos).
+        if not reanudar:
+            cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
+            cfg["ventana_dias"] = dias
+            cfg["brands"] = [{
+                "n": c["n"], "star": c.get("star", False),
+                "ig": c.get("ig") if "ig" in redes else None,
+                "fb": c.get("fb") if "fb" in redes else None,
+                "x": c.get("x") if "x" in redes else None,
+                "tt": c.get("tt") if "tt" in redes else None,
+            } for c in cuentas]
+            json.dump(cfg, open(CONFIG_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
         env = dict(os.environ)
         config_local.cargar()
@@ -260,25 +263,27 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
         if config_local.obtener("ANTHROPIC_API_KEY"):
             env["ANTHROPIC_API_KEY"] = config_local.obtener("ANTHROPIC_API_KEY")
 
+        R = os.path.join(RAW_DIR, "")
         pasos = [("Bajando posteos de las redes", [sys.executable, "fetch_apify.py",
                                                    "--dias", str(dias),
-                                                   "--redes", ",".join(redes)])]
+                                                   "--redes", ",".join(redes)],
+                  os.path.join(RAW_DIR, "posts.jsonl"))]
         if con_comentarios:
-            pasos.append(("Bajando comentarios del público", [sys.executable, "fetch_comments.py"]))
+            pasos.append(("Bajando comentarios del público", [sys.executable, "fetch_comments.py"],
+                          os.path.join(RAW_DIR, "comments.jsonl")))
             if con_ia:
-                pasos.append(("Analizando el sentimiento", [sys.executable, "sentimiento.py"]))
+                pasos.append(("Analizando el sentimiento", [sys.executable, "sentimiento.py"],
+                              os.path.join(RAW_DIR, "comments_scored.jsonl")))
         pasos.append(("Calculando métricas",
-                      [sys.executable, "analyze.py"] + (["--ia"] if con_ia else [])))
+                      [sys.executable, "analyze.py"] + (["--ia"] if con_ia else []), None))
         if con_comentarios and con_ia:
             pasos.append(("Cruzando léxico rioplatense con IA",
-                          [sys.executable, "reporte_sentimiento.py"]))
-            pasos.append(("Generando las nubes de palabras", [sys.executable, "nubes.py"]))
+                          [sys.executable, "reporte_sentimiento.py"], None))
+            pasos.append(("Generando las nubes de palabras", [sys.executable, "nubes.py"], None))
         if con_informe:
-            pasos.append(("Armando el informe", [sys.executable, "informe_ppt.py"]))
-            # El diseño se verifica ANTES de entregar: superposiciones, desbordes, texto
-            # partido. Si falla, la corrida falla — no se entrega un informe roto.
-            pasos.append(("Verificando el diseño", [sys.executable, "verificar_ppt.py"]))
-            pasos.append(("Exportando a PDF", [sys.executable, "exportar_pdf.py"]))
+            pasos.append(("Armando el informe", [sys.executable, "informe_ppt.py"], None))
+            pasos.append(("Verificando el diseño", [sys.executable, "verificar_ppt.py"], None))
+            pasos.append(("Exportando a PDF", [sys.executable, "exportar_pdf.py"], None))
 
         ESTADO["pasos"] = [p[0] for p in pasos]
         ESTADO["pasos_total"] = len(pasos)
@@ -289,7 +294,13 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
         _cap = auth.TOPE_CORRIDA
         _ini_gasto = costos.cantidad_registros()
 
-        for i, (etiqueta, cmd) in enumerate(pasos):
+        for i, (etiqueta, cmd, out) in enumerate(pasos):
+            ESTADO["paso_num"] = i
+            # Reanudar: si el resultado de este paso ya está, no se rehace (no se re-paga).
+            if reanudar and out and os.path.exists(out):
+                log("↷ %s — ya estaba hecho, se reutiliza" % etiqueta)
+                ESTADO["paso_num"] = i + 1
+                continue
             # Antes de cada paso: ¿el gasto REAL de esta corrida ya se pasó del tope?
             real = costos.gasto_desde(_ini_gasto)
             if real > _cap:
@@ -300,7 +311,6 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
                 raise RuntimeError("Se cortó por gasto: USD %.2f supera el tope de USD %.2f"
                                    % (real, _cap))
             ESTADO["paso"] = etiqueta
-            ESTADO["paso_num"] = i
             log("▸ " + etiqueta)
             p = subprocess.run(cmd, cwd=HERE, env=env, capture_output=True, text=True)
             salida = (p.stdout or "") + "\n" + (p.stderr or "")
@@ -422,6 +432,8 @@ class Handler(BaseHTTPRequestHandler):
                 "corrida": {k: ESTADO[k] for k in
                             ("corriendo", "paso", "paso_num", "pasos", "pasos_total",
                              "log", "fin", "error", "error_tipo", "inicio", "eta_min")},
+                "puede_reanudar": bool(ESTADO.get("error")
+                                       and os.path.exists(os.path.join(RAW_DIR, "posts.jsonl"))),
             })
         if r == "/tablero":
             return self._archivo(os.path.join(HERE, "index.html"), "text/html; charset=utf-8")
@@ -469,6 +481,21 @@ class Handler(BaseHTTPRequestHandler):
         if r == "/api/estimar":
             return self._json(estimar(body["cuentas"], body["redes"], int(body["dias"]),
                                       bool(body.get("comentarios")), bool(body.get("ia"))))
+
+        if r == "/api/reanudar":
+            if ESTADO["corriendo"]:
+                return self._json({"error": "Ya hay una corrida en curso."}, 409)
+            # Reanudar reusa lo scrapeado: no re-paga Apify. Solo corre lo que faltó.
+            if not os.path.exists(os.path.join(RAW_DIR, "posts.jsonl")):
+                return self._json({"error": "No hay datos guardados para reanudar. "
+                                   "El servidor pudo haberse reiniciado; hay que correr de nuevo."}, 400)
+            fl = ESTADO.get("flags") or {"comentarios": True, "ia": True, "informe": True}
+            threading.Thread(target=correr, daemon=True, kwargs={
+                "cuentas": [], "redes": [], "dias": 0,
+                "con_comentarios": fl["comentarios"], "con_ia": fl["ia"],
+                "con_informe": fl["informe"], "reanudar": True, "eta_min": 3,
+            }).start()
+            return self._json({"ok": True})
 
         if r == "/api/correr":
             if ESTADO["corriendo"]:

@@ -437,7 +437,7 @@ async function poll(){
 
   // ── error con causa: si se acabaron los créditos, decirlo con nombre y apellido
   if (c.error){
-    $("#run").innerHTML = errorBox(c);
+    $("#run").innerHTML = errorBox(c, d.puede_reanudar);
     return;
   }
 
@@ -474,7 +474,7 @@ async function poll(){
 }
 
 // ── errores con causa ───────────────────────────────────────────────
-function errorBox(c){
+function errorBox(c, puedeReanudar){
   const e = c.error_tipo || "";
   const CASOS = {
     sin_creditos_anthropic: {
@@ -499,11 +499,16 @@ function errorBox(c){
     },
   };
   const k = CASOS[e];
+  const btnReanudar = puedeReanudar
+    ? `<div style="margin-top:14px"><button class="go" onclick="reanudar()">Reanudar desde donde quedó →</button>
+       <div class="hint">No vuelve a bajar los datos (ya están guardados): solo retoma lo que faltó. Casi no cuesta.</div></div>`
+    : "";
   if (!k) return `
     <div class="error">
       <h3>La corrida falló</h3>
       <p>${esc(c.error)}</p>
       <div class="accion">Si el problema persiste, contactá a <b>Pedro</b> con el detalle de abajo.</div>
+      ${btnReanudar}
       <div class="log">${c.log.slice(-14).map(esc).join("\n")}</div>
     </div>`;
   return `
@@ -511,8 +516,16 @@ function errorBox(c){
       <h3>${k.t}</h3>
       <p>${k.p}</p>
       <div class="accion">${k.a}</div>
+      ${btnReanudar}
       <div class="log">${c.log.slice(-10).map(esc).join("\n")}</div>
     </div>`;
+}
+
+async function reanudar(){
+  const d = await (await fetch("/api/reanudar", {method:"POST"})).json();
+  if (d.error) return alert(d.error);
+  T0 = Date.now();
+  poll();
 }
 
 function resultado(f){
