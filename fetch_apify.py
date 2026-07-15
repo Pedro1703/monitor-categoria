@@ -359,6 +359,9 @@ def main():
                 "oldestPostDateUnified": desde,
             }, "posteos TikTok · %d marcas" % len(tt_map))
             posts += [p for p in (norm_tt(i, tt_map) for i in items) if p]
+            costos.registrar("tt_post", len(items),
+                             len(items) / 1000 * costos.PRECIOS["tt_post"]["usd_1000"],
+                             "%d marcas · %d días" % (len(tt_map), dias))
 
     # Filtro de ventana: algunos actores ignoran o aproximan onlyPostsNewerThan.
     antes = len(posts)

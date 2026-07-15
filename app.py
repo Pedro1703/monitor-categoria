@@ -101,7 +101,7 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True, muestra=1.0):
     hist = _historico()
     lineas = []
 
-    filas, tot_ig, tot_fb, tot_x = [], 0, 0, 0
+    filas, tot_ig, tot_fb, tot_x, tot_tt = [], 0, 0, 0, 0
     for c in cuentas:
         cad = hist.get(c["n"], {}).get("cadencia")
         supuesto = cad is None
@@ -110,11 +110,13 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True, muestra=1.0):
         p_fb = int(cad * semanas * costos.CADENCIA_FB_FACTOR) if (c.get("fb") and "fb" in redes) else 0
         # En X la cadencia de marca suele ser bastante menor que en IG.
         p_x = int(cad * semanas * 0.6) if (c.get("x") and "x" in redes) else 0
+        p_tt = int(cad * semanas * 0.5) if (c.get("tt") and "tt" in redes) else 0
         tot_ig += p_ig
         tot_fb += p_fb
         tot_x += p_x
+        tot_tt += p_tt
         filas.append({"marca": c["n"], "posts_ig": p_ig, "posts_fb": p_fb, "posts_x": p_x,
-                      "supuesto": supuesto})
+                      "posts_tt": p_tt, "supuesto": supuesto})
 
     pr_ig, f_ig = costos.precio("ig_post")
     pr_fb, f_fb = costos.precio("fb_post")
@@ -129,6 +131,12 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True, muestra=1.0):
         costo += c_fb
         lineas.append({"k": "Posteos de Facebook", "n": tot_fb, "usd": round(c_fb, 2),
                        "precio": "US$ %.2f /1.000" % pr_fb, "fuente": f_fb})
+    if tot_tt:
+        pr_tt, f_tt = costos.precio("tt_post")
+        c_tt = tot_tt / 1000 * pr_tt
+        costo += c_tt
+        lineas.append({"k": "Posteos de TikTok", "n": tot_tt, "usd": round(c_tt, 2),
+                       "precio": "US$ %.2f /1.000" % pr_tt, "fuente": f_tt})
     if tot_x:
         pr_x, f_x = costos.precio("x_post")
         c_x = tot_x / 1000 * pr_x
@@ -152,32 +160,37 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True, muestra=1.0):
 
         ig_com, ig_ex = _vol("Instagram", "ig", 5, tot_ig)
         fb_com, fb_ex = _vol("Facebook", "fb", 4, tot_fb)
+        tt_com, tt_ex = _vol("TikTok", "tt", 8, tot_tt)
         # X va por búsqueda 'to:handle', con tope chico por marca: se estima conservador.
         marcas_x = [c["n"] for c in cuentas if c.get("x") and "x" in redes]
         x_com = min(int(tot_x * 3), 60 * len(marcas_x)) if marcas_x else 0
 
-        com["exacto"] = ig_ex and fb_ex and (ig_com + fb_com > 0)
-        com["total"] = ig_com + fb_com + x_com
-        # La muestra reduce la descarga por posteo (IG+FB); X no se muestrea (es marginal).
+        com["exacto"] = ig_ex and fb_ex and tt_ex and (ig_com + fb_com + tt_com > 0)
+        com["total"] = ig_com + fb_com + tt_com + x_com
+        # La muestra reduce la descarga por posteo (IG+FB+TT); X no se muestrea (es marginal).
         ig_p = int(round(ig_com * muestra))
         fb_p = int(round(fb_com * muestra))
-        com["n"] = ig_p + fb_p + x_com
+        tt_p = int(round(tt_com * muestra))
+        com["n"] = ig_p + fb_p + tt_p + x_com
         com["muestra"] = muestra
 
         pr_ig, _ = costos.precio("ig_comment")
         pr_fb, _ = costos.precio("fb_comment")
+        pr_tt, _ = costos.precio("tt_comment")
         pr_x, _ = costos.precio("x_comment")
-        c_com = ig_p / 1000 * pr_ig + fb_p / 1000 * pr_fb + x_com / 1000 * pr_x
+        c_com = (ig_p / 1000 * pr_ig + fb_p / 1000 * pr_fb
+                 + tt_p / 1000 * pr_tt + x_com / 1000 * pr_x)
         costo += c_com
         detalle = " · ".join(x for x in [
             "IG %d" % ig_p if ig_p else "",
             "FB %d" % fb_p if fb_p else "",
+            "TT %d" % tt_p if tt_p else "",
             "X %d" % x_com if x_com else ""] if x)
         etiqueta = "Comentarios (%s)" % detalle if detalle else "Comentarios"
         if muestra < 0.999:
             etiqueta += " · muestra %d%%" % round(muestra * 100)
         lineas.append({"k": etiqueta, "n": com["n"], "usd": round(c_com, 2),
-                       "precio": "IG %.2f · FB %.2f · X %.2f /1.000" % (pr_ig, pr_fb, pr_x),
+                       "precio": "IG %.2f · FB %.2f · TT %.2f · X %.2f /1.000" % (pr_ig, pr_fb, pr_tt, pr_x),
                        "fuente": "conteo exacto de la captura previa" if com["exacto"]
                                  else "volumen estimado (sin captura previa)"})
 
@@ -192,9 +205,9 @@ def estimar(cuentas, redes, dias, con_comentarios, con_ia=True, muestra=1.0):
     # alguna corrida previa de cualquier cosa. Se pondera por volumen: si el 80% de los
     # posteos estimados viene de marcas que nunca medimos, la banda es casi la de una
     # primera corrida, aunque una marca conocida esté en la lista.
-    vol_supuesto = sum(f["posts_ig"] + f["posts_fb"] + f.get("posts_x", 0)
+    vol_supuesto = sum(f["posts_ig"] + f["posts_fb"] + f.get("posts_x", 0) + f.get("posts_tt", 0)
                        for f in filas if f["supuesto"])
-    vol_total = max(tot_ig + tot_fb + tot_x, 1)
+    vol_total = max(tot_ig + tot_fb + tot_x + tot_tt, 1)
     frac_supuesta = vol_supuesto / vol_total
     banda = (costos.BANDA_CON_HISTORIA
              + frac_supuesta * (costos.BANDA_SIN_HISTORIA - costos.BANDA_CON_HISTORIA))
@@ -351,7 +364,9 @@ def correr(cuentas, redes, dias, con_comentarios, con_ia, con_informe=True, eta_
                                                    "--redes", ",".join(redes)],
                   os.path.join(RAW_DIR, "posts.jsonl"))]
         if con_comentarios:
-            cmd_com = [sys.executable, "fetch_comments.py"]
+            # Los comentarios se bajan SOLO de las redes que el usuario eligió, no de
+            # todo lo que haya en la captura (que puede tener redes de corridas previas).
+            cmd_com = [sys.executable, "fetch_comments.py", "--redes", ",".join(redes)]
             if muestra < 0.999:
                 cmd_com += ["--muestra", str(muestra)]
             pasos.append(("Bajando comentarios del público", cmd_com,

@@ -56,17 +56,23 @@ def cargar_posts():
     return [json.loads(l) for l in open(ruta, encoding="utf-8") if l.strip()]
 
 
-def elegir(posts, cfg, top, muestra=1.0):
-    """Elige de qué posteos bajar comentarios. El costo se controla con dos topes
-    genéricos: 'por_posteo' (máx. comentarios por posteo, así un posteo viral no se come
-    todo el presupuesto) y 'max_comentarios_total' (techo de la corrida). No hay nada
-    específico de una categoría."""
+# Redes que se bajan por posteo (un comentario cuelga de un posteo). X va por otra vía
+# (búsqueda de respuestas al handle) y se maneja aparte. Cada código de UX ('ig','fb','tt')
+# mapea al nombre de red que quedó guardado en los posteos.
+POR_POSTEO = {"ig": "Instagram", "fb": "Facebook", "tt": "TikTok"}
+
+
+def elegir(posts, cfg, top, muestra=1.0, redes_post=None):
+    """Elige de qué posteos bajar comentarios, SOLO de las redes pedidas. El costo se
+    controla con dos topes genéricos: 'por_posteo' (máx. comentarios por posteo, así un
+    posteo viral no se come todo el presupuesto) y 'max_comentarios_total' (techo de la
+    corrida). No hay nada específico de una categoría."""
     conf = cfg["comentarios"]
     minimo = conf["min_comentarios"]
 
-    # Instagram y Facebook se bajan por posteo (un comentario cuelga de un posteo). X va
-    # por otra vía (búsqueda de respuestas al handle), así que se maneja aparte en main.
-    cands = [p for p in posts if p["red"] in ("Instagram", "Facebook") and p["comments"] >= minimo]
+    # Solo las redes por-posteo que el usuario eligió (si no se pasa nada, todas).
+    nombres = set(redes_post) if redes_post is not None else set(POR_POSTEO.values())
+    cands = [p for p in posts if p["red"] in nombres and p["comments"] >= minimo]
 
     if top:
         por_marca = collections.defaultdict(list)
@@ -171,6 +177,30 @@ def _bajar_fb(elegidos, cfg, tope, desde):
     return out, len(items)
 
 
+def _bajar_tt(elegidos, cfg, tope):
+    """Comentarios de TikTok: uno por video, vía clockworks~tiktok-comments-scraper."""
+    por_url = {p["url"]: p for p in elegidos}
+    items = run_actor(cfg["actors"]["tiktok_comments"], {
+        "postURLs": [p["url"] for p in elegidos],
+        "commentsPerPost": tope,
+        "maxRepliesPerComment": 0,
+    }, "comentarios TikTok · %d videos" % len(elegidos), timeout_min=40)
+    out = []
+    for it in items:
+        url = it.get("videoWebUrl") or it.get("postUrl") or it.get("videoUrl") or it.get("url") or ""
+        post = por_url.get(url) or next((p for p in elegidos if p["url"] and p["url"] in url), None)
+        if not post:
+            continue
+        texto = (it.get("text") or it.get("comment") or "").strip()
+        if not texto:
+            continue
+        out.append({"marca": post["marca"], "red": "TikTok",
+                    "post_url": post["url"], "post_fecha": post["fecha"],
+                    "fecha": _fecha(it.get("createTimeISO") or it.get("createTime") or it.get("timestamp")),
+                    "texto": texto, "likes": _num(it.get("diggCount") or it.get("likesCount"))})
+    return out, len(items)
+
+
 def _bajar_x(cfg, posts, tope_marca, desde):
     """Respuestas de X/Twitter. El actor de tweets no baja hilos por posteo, así que se
     buscan tweets 'to:handle' — la conversación pública dirigida a la marca. Se excluye a
@@ -210,9 +240,13 @@ def main():
                     help="solo los N posteos más comentados de cada marca")
     ap.add_argument("--muestra", type=float, default=1.0,
                     help="fracción (0-1) de comentarios a bajar, muestra ALEATORIA (default 1.0 = todo)")
+    ap.add_argument("--redes", default="ig,fb,x,tt",
+                    help="redes a relevar, separadas por coma (ig,fb,x,tt). Solo se bajan "
+                         "comentarios de las que el usuario eligió; default: todas.")
     args = ap.parse_args()
 
     from datetime import datetime, timedelta
+    redes = [r.strip() for r in args.redes.split(",") if r.strip()]
     cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
     conf = cfg["comentarios"]
     posts = cargar_posts()
@@ -220,14 +254,19 @@ def main():
     dias = cfg.get("ventana_dias", 365)
     desde = (datetime.utcnow() - timedelta(days=dias)).strftime("%Y-%m-%d")
 
-    # IG + FB comparten el techo 'max_comentarios_total' y el muestreo (van por posteo).
-    elegidos = elegir(posts, cfg, args.top, args.muestra)
+    # SOLO las redes por-posteo que el usuario eligió en el UX. Sin esto, si una corrida
+    # anterior dejó posteos de otra red en la captura (se fusionan), se bajarían comentarios
+    # de una red que esta vez NO se pidió.
+    redes_post = [POR_POSTEO[r] for r in redes if r in POR_POSTEO]
+    elegidos = elegir(posts, cfg, args.top, args.muestra, redes_post)
     ig_sel = [p for p in elegidos if p["red"] == "Instagram"]
     fb_sel = [p for p in elegidos if p["red"] == "Facebook"]
+    tt_sel = [p for p in elegidos if p["red"] == "TikTok"]
 
     # X tiene un tope propio y chico (por handle): el actor busca respuestas 'to:handle',
     # es barato ($0,40/1000) y su volumen es marginal, no debe comerse el presupuesto.
-    x_map = _handles(cfg, "x")
+    x_on = "x" in redes
+    x_map = _handles(cfg, "x") if x_on else {}
     x_posts = [p for p in posts if p["red"] == "X"]
     x_tope_marca = tope
     esp_x = min(sum(min(p["comments"], tope) for p in x_posts),
@@ -235,27 +274,31 @@ def main():
 
     esp_ig = sum(min(p["comments"], tope) for p in ig_sel)
     esp_fb = sum(min(p["comments"], tope) for p in fb_sel)
+    esp_tt = sum(min(p["comments"], tope) for p in tt_sel)
     P = costos.PRECIOS
     costo = (esp_ig / 1000 * P["ig_comment"]["usd_1000"]
              + esp_fb / 1000 * P["fb_comment"]["usd_1000"]
+             + esp_tt / 1000 * P["tt_comment"]["usd_1000"]
              + esp_x / 1000 * P["x_comment"]["usd_1000"])
 
+    print("Redes pedidas: %s" % ", ".join(redes))
     print("Comentarios a bajar, por red (tope %d/posteo):" % tope)
-    print("   Instagram : %5d  (%d posteos)" % (esp_ig, len(ig_sel)))
-    print("   Facebook  : %5d  (%d posteos)" % (esp_fb, len(fb_sel)))
-    print("   X/Twitter : %5d  (búsqueda to:@handle, %d marcas)" % (esp_x, len(x_map)))
+    if "ig" in redes: print("   Instagram : %5d  (%d posteos)" % (esp_ig, len(ig_sel)))
+    if "fb" in redes: print("   Facebook  : %5d  (%d posteos)" % (esp_fb, len(fb_sel)))
+    if "tt" in redes: print("   TikTok    : %5d  (%d videos)" % (esp_tt, len(tt_sel)))
+    if "x"  in redes: print("   X/Twitter : %5d  (búsqueda to:@handle, %d marcas)" % (esp_x, len(x_map)))
     print("Costo estimado en Apify         : USD %.2f" % costo)
     print()
     por_marca = collections.Counter()
-    for p in ig_sel + fb_sel:
+    for p in ig_sel + fb_sel + tt_sel:
         por_marca[p["marca"]] += min(p["comments"], tope)
     for m, c in por_marca.most_common():
-        print("   %-18s %5d comentarios (IG+FB)" % (m, c))
+        print("   %-18s %5d comentarios (por posteo)" % (m, c))
 
     if args.estimar:
         print("\n(--estimar: no se gastó nada. Sacá el flag para bajarlos.)")
         return 0
-    if not (ig_sel or fb_sel or x_map):
+    if not (ig_sel or fb_sel or tt_sel or x_map):
         print("\nNo hay posteos que cumplan el filtro. Nada que bajar.")
         return 0
     if not APIFY_TOKEN or not chequear_conexion():
@@ -263,7 +306,7 @@ def main():
 
     ig_handles = _handles(cfg, "ig")
     comentarios, de_la_marca = [], 0
-    n_ig = n_fb = n_x = 0
+    n_ig = n_fb = n_tt = n_x = 0
 
     print("\nBajando comentarios…")
     if ig_sel:
@@ -273,6 +316,9 @@ def main():
     if fb_sel:
         c_fb, n_fb = _bajar_fb(fb_sel, cfg, tope, desde)
         comentarios += c_fb
+    if tt_sel:
+        c_tt, n_tt = _bajar_tt(tt_sel, cfg, tope)
+        comentarios += c_tt
     if x_map:
         c_x, n_x = _bajar_x(cfg, posts, x_tope_marca, desde)
         comentarios += c_x
@@ -289,6 +335,9 @@ def main():
     if n_fb:
         costos.registrar("fb_comment", n_fb, n_fb / 1000 * P["fb_comment"]["usd_1000"],
                          "%d posteos FB" % len(fb_sel))
+    if n_tt:
+        costos.registrar("tt_comment", n_tt, n_tt / 1000 * P["tt_comment"]["usd_1000"],
+                         "%d videos TikTok" % len(tt_sel))
     if n_x:
         costos.registrar("x_comment", n_x, n_x / 1000 * P["x_comment"]["usd_1000"],
                          "%d marcas X" % len(x_map))

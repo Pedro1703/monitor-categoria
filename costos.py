@@ -26,8 +26,10 @@ LIBRO = os.path.join(HERE, "raw", "costos.json")
 PRECIOS = {
     "ig_post":      {"usd_1000": 2.30, "fuente": "verificado contra factura Apify (jul-2026)"},
     "fb_post":      {"usd_1000": 5.00, "fuente": "verificado contra factura Apify (jul-2026)"},
+    "tt_post":      {"usd_1000": 1.70, "fuente": "tarifa publicada del actor (sin verificar aún)"},
     "ig_comment":   {"usd_1000": 2.30, "fuente": "verificado contra factura Apify (jul-2026)"},
     "fb_comment":   {"usd_1000": 4.00, "fuente": "tarifa publicada del actor (sin verificar aún)"},
+    "tt_comment":   {"usd_1000": 0.50, "fuente": "tarifa publicada del actor (sin verificar aún)"},
     "x_comment":    {"usd_1000": 0.40, "fuente": "mismo actor que x_post (sin verificar aún)"},
     "x_post":       {"usd_1000": 0.40, "fuente": "tarifa publicada del actor (sin verificar aún)"},
     "ig_profile":   {"usd_1000": 2.30, "fuente": "verificado"},

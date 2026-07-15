@@ -10,6 +10,7 @@
     "facebook_posts": "apify~facebook-posts-scraper",
     "facebook_comments": "apify~facebook-comments-scraper",
     "tiktok_posts": "clockworks~tiktok-scraper",
+    "tiktok_comments": "clockworks~tiktok-comments-scraper",
     "x_posts": "apidojo~tweet-scraper"
   },
   "comentarios": {
