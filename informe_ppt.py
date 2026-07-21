@@ -642,15 +642,8 @@ def build():
     if os.path.exists(nubes_path):
         NB = json.load(open(nubes_path, encoding="utf-8"))
         if NB:
-            slide_seccion(prs, "Qué dice\nla gente",
-                          "Las palabras que el público más repite en los comentarios.")
-
-            orden = sorted(NB.items(), key=lambda x: -x[1]["n"])
-            for m, info in orden:
-                if info["n"] < 30:
-                    continue          # muestra chica: la nube sería anecdótica
-                es_bse = bool(bse and m == bse["n"])
-
+            def _nubes_de(m, info, es_bse):
+                """Las tres lecturas de una misma marca: todo, lo que elogia, lo que critica."""
                 slide_nube(prs, cliente, proyecto,
                            "%s · lo que más repite su público" % m,
                            info.get("todas"), info.get("top", []),
@@ -658,6 +651,15 @@ def build():
                            color=LAVANDA if es_bse else BLANCO)
 
                 # Elogios y quejas por separado: es lo que se convierte en decisión.
+                # La nube positiva solo se abre para la marca principal: en las demás
+                # ocupa una slide para decir algo que el sentimiento neto ya resume.
+                if es_bse and info.get("pos"):
+                    slide_nube(prs, cliente, proyecto,
+                               "%s · lo que su público le reconoce" % m,
+                               info["pos"], info.get("top_pos", []),
+                               lectura=("Las palabras de los comentarios positivos. "
+                                        "El tamaño es cuántas veces se repiten."),
+                               nota=M_NUBE % info["n"], color=RGBColor(0x7A, 0xD1, 0xA5))
                 if info.get("neg"):
                     slide_nube(prs, cliente, proyecto,
                                "%s · de qué se queja su público" % m,
@@ -665,6 +667,26 @@ def build():
                                lectura=("Las palabras de los comentarios negativos. "
                                         "El tamaño es cuántas veces se repiten."),
                                nota=M_NUBE_NEG, color=RGBColor(0xFF, 0x8A, 0x7A))
+
+            # muestra chica: la nube sería anecdótica
+            orden = [(m, i) for m, i in sorted(NB.items(), key=lambda x: -x[1]["n"])
+                     if i["n"] >= 30]
+            nb_bse = [(m, i) for m, i in orden if bse and m == bse["n"]]
+            resto = [(m, i) for m, i in orden if not (bse and m == bse["n"])]
+
+            # La marca principal va en su propio apartado, antes que la categoría: el
+            # cliente quiere leer lo suyo completo, no buscarlo entre los competidores.
+            if nb_bse:
+                m, info = nb_bse[0]
+                slide_seccion(prs, "Los comentarios\nde %s" % m,
+                              "Qué dice su público, palabra por palabra.")
+                _nubes_de(m, info, True)
+
+            if resto:
+                slide_seccion(prs, "Qué dice\nla gente",
+                              "Las palabras que el público más repite en los comentarios.")
+                for m, info in resto:
+                    _nubes_de(m, info, False)
 
     # ── 4. Los que hablan solos
     mudos = [b for b in activas if b["posts"] >= 100 and b["sov_eng"] < 3]
