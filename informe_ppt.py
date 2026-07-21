@@ -510,11 +510,19 @@ def build():
         "léxico de español rioplatense y un modelo de lenguaje) que coinciden en el 71% de los casos; "
         "los desacuerdos se revisan a mano.")
 
+    # El origen de los territorios cambia según cómo se corrió el análisis: con IA se derivan
+    # del sector y se clasifican con Claude; sin IA se cae al lexicón de reglas de la config.
+    # La nota tiene que decir la verdad de ESA corrida, no una fija.
+    _origen_terr = (
+        "Los territorios se derivan del propio sector con IA a partir de una muestra de los "
+        "posteos, y cada posteo se clasifica con IA en el que mejor le calza."
+        if d["meta"].get("ia") else
+        "Cada posteo se asigna al territorio de comunicación con el que más coincide, según un "
+        "lexicón de reglas curado por el equipo de Ciudadana y validado sobre la muestra.")
     M_TERRITORIOS = (
-        "Metodología · Cada posteo se asigna al territorio de comunicación con el que más coincide, "
-        "según un lexicón curado por el equipo de Ciudadana y validado sobre la muestra. La barra "
-        "lavanda marca la porción de cada territorio ocupada por %s. Un territorio con 0%% es espacio "
-        "libre en la conversación de la categoría." % cliente)
+        "Metodología · %s La barra lavanda marca la porción de cada territorio ocupada por %s. "
+        "Un territorio con 0%% es espacio libre en la conversación de la categoría."
+        % (_origen_terr, cliente))
 
     slide_portada(prs, d)
 

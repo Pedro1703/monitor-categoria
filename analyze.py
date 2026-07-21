@@ -99,9 +99,10 @@ def _derivar_territorios(client, categoria, posts):
     muestra = _muestra_estratificada(posts, 300)
     listado = "\n".join("- [%s] %s" % (p.get("marca", "?"), (p["texto"] or "").replace("\n", " ")[:220])
                         for p in muestra)
+    # Sin minItems/maxItems: la API solo acepta 0 o 1 en esos campos y rechaza el schema
+    # entero (error 400). El rango 6-9 va pedido en el prompt y recortado abajo con [:9].
     schema = {"type": "object",
-              "properties": {"territorios": {"type": "array", "items": {"type": "string"},
-                                             "minItems": 5, "maxItems": 9}},
+              "properties": {"territorios": {"type": "array", "items": {"type": "string"}}},
               "required": ["territorios"], "additionalProperties": False}
     try:
         r = client.messages.create(

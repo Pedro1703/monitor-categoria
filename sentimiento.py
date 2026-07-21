@@ -240,9 +240,10 @@ def _derivar_motivos(client, categoria, comentarios):
     muestra = _muestra_estratificada(comentarios, 400)
     listado = "\n".join("- [%s] %s" % (c.get("marca", "?"), (c["texto"] or "").replace("\n", " ")[:220])
                         for c in muestra)
+    # Sin minItems/maxItems: la API solo acepta 0 o 1 en esos campos y rechaza el schema
+    # entero (error 400). El rango 2-8 va pedido en el prompt y recortado abajo con [:8].
     schema = {"type": "object",
-              "properties": {"motivos": {"type": "array", "items": {"type": "string"},
-                                         "minItems": 2, "maxItems": 8}},
+              "properties": {"motivos": {"type": "array", "items": {"type": "string"}}},
               "required": ["motivos"], "additionalProperties": False}
     try:
         r = client.messages.create(
