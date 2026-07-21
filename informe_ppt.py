@@ -504,11 +504,17 @@ def build():
         "palabras vacías (verbos y conectores sin contenido) y "
         "el nombre de la marca. Layout de empaquetado, sin superposiciones.")
 
-    M_NUBE_NEG = (
-        "Metodología · Solo las palabras de los comentarios clasificados como NEGATIVOS. El tamaño es "
-        "la frecuencia. La clasificación de sentimiento se hace con dos métodos independientes (un "
-        "léxico de español rioplatense y un modelo de lenguaje) que coinciden en el 71% de los casos; "
-        "los desacuerdos se revisan a mano.")
+    # Nubes de sentimiento: el tamaño NO es frecuencia. Con frecuencia cruda las palabras
+    # más grandes de "de qué se queja" terminaban siendo el tema de la categoría (seguros,
+    # uruguay, seguridad), que aparecen igual en los elogios. No decían nada.
+    M_NUBE_SENT = (
+        "Metodología · Solo los comentarios clasificados como %s. El tamaño no es la frecuencia: "
+        "cada palabra se pesa por cuánto se CONCENTRA en ese grupo respecto del resto de los "
+        "comentarios de la misma marca (frecuencia × logaritmo del sobre-uso, con suavizado). "
+        "Así se caen las palabras que son solo el tema de la categoría y quedan las que de verdad "
+        "distinguen a este grupo. Mínimo 2 apariciones por palabra. El sentimiento se clasifica "
+        "con dos métodos independientes (RoBERTuito y un léxico rioplatense) que coinciden en el "
+        "%d%% de los casos; los desacuerdos se revisan a mano.")
 
     # El origen de los territorios cambia según cómo se corrió el análisis: con IA se derivan
     # del sector y se clasifican con Claude; sin IA se cae al lexicón de reglas de la config.
@@ -653,20 +659,23 @@ def build():
                 # Elogios y quejas por separado: es lo que se convierte en decisión.
                 # La nube positiva solo se abre para la marca principal: en las demás
                 # ocupa una slide para decir algo que el sentimiento neto ya resume.
+                pct_ac = (rep.get("acuerdo", {}) or {}).get("pct", 0)
                 if es_bse and info.get("pos"):
                     slide_nube(prs, cliente, proyecto,
                                "%s · lo que su público le reconoce" % m,
                                info["pos"], info.get("top_pos", []),
-                               lectura=("Las palabras de los comentarios positivos. "
-                                        "El tamaño es cuántas veces se repiten."),
-                               nota=M_NUBE % info["n"], color=RGBColor(0x7A, 0xD1, 0xA5))
+                               lectura=("Las palabras propias de los comentarios positivos: "
+                                        "las que aparecen ahí y no en el resto."),
+                               nota=M_NUBE_SENT % ("POSITIVOS", pct_ac),
+                               color=RGBColor(0x7A, 0xD1, 0xA5))
                 if info.get("neg"):
                     slide_nube(prs, cliente, proyecto,
                                "%s · de qué se queja su público" % m,
                                info["neg"], info.get("top_neg", []),
-                               lectura=("Las palabras de los comentarios negativos. "
-                                        "El tamaño es cuántas veces se repiten."),
-                               nota=M_NUBE_NEG, color=RGBColor(0xFF, 0x8A, 0x7A))
+                               lectura=("Las palabras propias de los comentarios negativos: "
+                                        "las que aparecen ahí y no en el resto."),
+                               nota=M_NUBE_SENT % ("NEGATIVOS", pct_ac),
+                               color=RGBColor(0xFF, 0x8A, 0x7A))
 
             # muestra chica: la nube sería anecdótica
             orden = [(m, i) for m, i in sorted(NB.items(), key=lambda x: -x[1]["n"])

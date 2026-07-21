@@ -24,11 +24,16 @@ CRITERIOS
     python3 nubes.py
 """
 
-import os, sys, json, re, collections
+import os, sys, json, re, math, collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, "raw")
 OUT = os.path.join(HERE, "brand", "nubes")
+
+# Mínimo de palabras distintivas para dibujar una nube de sentimiento. Por debajo el
+# dibujo queda ralo y engañoso: muestra el tema de un hilo puntual como si fuera la
+# conversación de la marca. Mejor no mostrarla: los motivos ya cubren el "por qué".
+MIN_PALABRAS = 15
 
 # Colores CiudadanIA / Ciudadana: la nube se tiñe con la paleta, no con arcoíris.
 PALETA_LAV = ["#C4B5E8", "#A897D6", "#8F7BC4", "#E0D7F2", "#B3A2DF"]
@@ -116,6 +121,54 @@ def palabras(textos, marca):
     return c
 
 
+def palabras_doc(textos, marca):
+    """Como palabras(), pero cuenta cada palabra UNA VEZ por comentario.
+
+    Evita la 'burstiness': una persona que repite 'colilla' cuatro veces en un mismo
+    comentario, o un hilo entero sobre un posteo puntual, inflaba la palabra como si
+    fuera un tema de la marca. Lo que importa es a cuánta gente le salió, no cuántas
+    veces la escribió la misma persona.
+    """
+    c = collections.Counter()
+    for t in textos:
+        c.update(set(palabras([t], marca)))
+    return c
+
+
+def distintivas(freq_grupo, freq_resto, min_n=2):
+    """Palabras PROPIAS de un grupo, no simplemente frecuentes dentro de él.
+
+    Una nube de "de qué se queja la gente" hecha con frecuencia cruda no dice nada: las
+    palabras más repetidas en los comentarios negativos son las mismas que en todos los
+    demás (el rubro, el país, la marca). Salían 'uruguay', 'seguros', 'seguridad' — que
+    no son quejas, son el tema de la categoría.
+
+    Acá cada palabra se pesa por cuánto se CONCENTRA en el grupo respecto del resto de
+    los comentarios de esa misma marca:
+
+        peso = f_grupo × log2( p_grupo / p_resto )
+
+    con suavizado de Laplace para que una palabra nueva no divida por cero. Solo quedan
+    las de lift > 1 (sobre-representadas) y las que aparecen en al menos `min_n`
+    comentarios DISTINTOS: con una o dos menciones sueltas el ruido gana. Así 'uruguay'
+    se cae por común y 'colilla' por anecdótica, y queda 'depredador'.
+    """
+    a = 0.5                                    # suavizado
+    n_g = sum(freq_grupo.values()) or 1
+    n_r = sum(freq_resto.values()) or 1
+    v = len(set(freq_grupo) | set(freq_resto)) or 1
+    out = collections.Counter()
+    for w, f in freq_grupo.items():
+        if f < min_n:
+            continue
+        p_g = (f + a) / (n_g + a * v)
+        p_r = (freq_resto.get(w, 0) + a) / (n_r + a * v)
+        lift = p_g / p_r
+        if lift > 1:
+            out[w] = f * math.log2(lift)
+    return out
+
+
 def render(freqs, destino, paleta, ancho=1800, alto=900):
     """Dibuja la nube. El tamaño = frecuencia. Layout empaquetado, sin solapes."""
     from wordcloud import WordCloud
@@ -179,19 +232,34 @@ def build():
             info["todas"] = p
             info["top"] = [{"w": w, "n": n} for w, n in freq.most_common(12)]
 
-        # Positivos y negativos por separado: es lo accionable.
+        # Positivos y negativos por separado: es lo accionable. Acá NO va frecuencia cruda
+        # sino contraste contra el resto de los comentarios de la misma marca: lo que
+        # buscamos es qué distingue a un elogio de una queja, no cuál es el tema del rubro.
         pos = [c["texto"] for c in suyos if c["sentimiento"] == "positivo"]
         neg = [c["texto"] for c in suyos if c["sentimiento"] == "negativo"]
-        if len(pos) >= 8:
-            fp = palabras(pos, m)
-            if render(fp, os.path.join(OUT, "%s_pos.png" % base), PALETA_POS):
-                info["pos"] = os.path.join(OUT, "%s_pos.png" % base)
-                info["top_pos"] = [{"w": w, "n": n} for w, n in fp.most_common(8)]
-        if len(neg) >= 8:
-            fn = palabras(neg, m)
-            if render(fn, os.path.join(OUT, "%s_neg.png" % base), PALETA_NEG):
-                info["neg"] = os.path.join(OUT, "%s_neg.png" % base)
-                info["top_neg"] = [{"w": w, "n": n} for w, n in fn.most_common(8)]
+        no_pos = [c["texto"] for c in suyos if c["sentimiento"] != "positivo"]
+        no_neg = [c["texto"] for c in suyos if c["sentimiento"] != "negativo"]
+        # Se dibujan solo las 30 mejores: más abajo la señal se apaga y la nube vuelve a
+        # llenarse de ruido, que es justo lo que este contraste vino a resolver.
+        def _nube_sent(textos, resto, archivo, paleta, clave, top_clave):
+            if len(textos) < 8:
+                return
+            f = distintivas(palabras_doc(textos, m), palabras_doc(resto, m))
+            # Piso de vocabulario: con menos de MIN_PALABRAS distintivas no hay nube, hay
+            # una anécdota. Suele pasar cuando las quejas vienen todas de un mismo hilo:
+            # el dibujo queda vacío y, peor, sugiere un tema que no es de la marca.
+            if len(f) < MIN_PALABRAS:
+                print("      (sin nube de %s: solo %d palabras distintivas, muestra chica)"
+                      % (clave, len(f)))
+                return
+            f = collections.Counter(dict(f.most_common(30)))
+            ruta_png = os.path.join(OUT, archivo)
+            if render(f, ruta_png, paleta):
+                info[clave] = ruta_png
+                info[top_clave] = [{"w": w, "n": round(n, 2)} for w, n in f.most_common(8)]
+
+        _nube_sent(pos, no_pos, "%s_pos.png" % base, PALETA_POS, "pos", "top_pos")
+        _nube_sent(neg, no_neg, "%s_neg.png" % base, PALETA_NEG, "neg", "top_neg")
 
         salida[m] = info
         print("  %-16s %3d comentarios · %s" % (m, len(suyos),
