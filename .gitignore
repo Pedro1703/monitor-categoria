@@ -4,6 +4,8 @@
 
 # ── DATOS de la categoría: el repo es código, no inteligencia competitiva
 raw/
+raw_backup_*/
+monitor_backup_*.json
 monitor.json
 monitor.data.js
 reporte_sentimiento.json

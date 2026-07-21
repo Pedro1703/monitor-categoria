@@ -87,6 +87,10 @@ TARIFA = {"claude-opus-4-8": (5.0, 25.0), "claude-haiku-4-5": (1.0, 5.0)}
 LOTE = 60           # comentarios por llamada
 MUESTRA_VALID = 60  # comentarios para la validación / auditoría
 
+# Motivo de los comentarios que RoBERTuito puntuó pero Claude no alcanzó a clasificar.
+# Aparece como tal en el informe: es más honesto que repartirlos en categorías inventadas.
+SIN_MOTIVO = "Sin clasificar"
+
 
 # ══════════════════════════════════════════════════ Etapa 1: filtro de ruido
 
@@ -401,9 +405,9 @@ def validar(comentarios, etiquetas, motivos, categoria, modelo):
               "      cae legítimamente en más de una caja. No cambian ninguna decisión.)")
 
 
-def escribir_auditoria(comentarios, etiquetas):
+def escribir_auditoria(comentarios, puntuados):
     """La muestra que un humano tiene que leer antes de creerle al número."""
-    idxs = list(etiquetas)
+    idxs = list(puntuados)
     random.shuffle(idxs)
     ruta = os.path.join(RAW_DIR, "auditoria_muestra.csv")
     with open(ruta, "w", encoding="utf-8", newline="") as f:
@@ -411,9 +415,9 @@ def escribir_auditoria(comentarios, etiquetas):
         w.writerow(["marca", "comentario", "relevante", "sentimiento", "motivo", "intensidad",
                     "¿coincidís? (sí/no)"])
         for i in idxs[:MUESTRA_VALID]:
-            e, c = etiquetas[i], comentarios[i]
-            w.writerow([c["marca"], c["texto"][:200], e["relevante"], e["sentimiento"],
-                        e["motivo"], e["intensidad"], ""])
+            c = comentarios[i]
+            w.writerow([c["marca"], c["texto"][:200], c["relevante"], c["sentimiento"],
+                        c["motivo"], c["intensidad"], ""])
     print("\nMuestra de auditoría: %s" % ruta)
     print("   Abrila, leé 60 comentarios y marcá si coincidís. Es el único control real.")
 
@@ -472,36 +476,54 @@ def main():
     # es el PRIMARIO; Claude queda para el MOTIVO. El sentimiento de Claude se conserva
     # como voto de validación (sent_claude). Si RoBERTuito no está instalado, el
     # sentimiento primario lo pone Claude (fallback), y el pipeline sigue igual.
+    # RoBERTuito corre sobre TODOS los comentarios candidatos, no solo sobre los que Claude
+    # llegó a etiquetar: es local y gratis, y el sentimiento tiene que salir igual aunque
+    # Claude falle (sin crédito, corte de red, rate limit). Claude aporta 'relevante' y
+    # 'motivo'; donde no llegó, el comentario queda SIN motivo pero CON sentimiento, que es
+    # muchísimo mejor que quedarse sin informe. Antes esto estaba acoplado y una caída de
+    # Claude dejaba el análisis de sentimiento en cero.
     import nlp_local
     if nlp_local.disponible():
-        idxs = list(etiquetas)
+        idxs = list(range(len(comentarios)))
         preds = nlp_local.sentimiento([comentarios[i]["texto"] for i in idxs])
         for i, p in zip(idxs, preds):
-            comentarios[i]["sent_claude"] = comentarios[i]["sentimiento"]
-            comentarios[i]["sent_rob"] = p
-            comentarios[i]["sentimiento"] = p        # RoBERTuito manda en el sentimiento
-        print("\nSentimiento: RoBERTuito (primario, %d comentarios) · motivo: Claude" % len(idxs))
+            c = comentarios[i]
+            if i in etiquetas:
+                c["sent_claude"] = c["sentimiento"]   # queda como voto de validación
+            else:
+                c["relevante"] = True                 # sin Claude no hay filtro de relevancia
+                c["motivo"] = SIN_MOTIVO
+                c["intensidad"] = 2
+            c["sent_rob"] = p
+            c["sentimiento"] = p                      # RoBERTuito manda en el sentimiento
+        puntuados = set(idxs)
+        print("\nSentimiento: RoBERTuito (primario, %d comentarios) · motivo: Claude (%d)"
+              % (len(idxs), len(etiquetas)))
+        if len(etiquetas) < len(idxs):
+            print("   [aviso] %d comentarios quedaron sin motivo (Claude no respondió). "
+                  "El sentimiento SÍ está." % (len(idxs) - len(etiquetas)), file=sys.stderr)
     else:
+        puntuados = set(etiquetas)
         print("\n[aviso] RoBERTuito no instalado: el sentimiento primario lo pone Claude. "
               "Para el motor local: pip install pysentimiento", file=sys.stderr)
 
     salida = os.path.join(RAW_DIR, "comments_scored.jsonl")
     with open(salida, "w", encoding="utf-8") as f:
         for i, c in enumerate(comentarios):
-            if i in etiquetas:
+            if i in puntuados:
                 f.write(json.dumps(c, ensure_ascii=False) + "\n")
 
-    rel = [c for i, c in enumerate(comentarios) if i in etiquetas and c["relevante"]]
+    rel = [c for i, c in enumerate(comentarios) if i in puntuados and c["relevante"]]
     sent = collections.Counter(c["sentimiento"] for c in rel)
     n = len(rel) or 1
-    print("\nRelevantes (hablan de la marca): %d de %d" % (len(rel), len(etiquetas)))
+    print("\nRelevantes (hablan de la marca): %d de %d" % (len(rel), len(puntuados)))
     print("   positivo %3d (%2.0f%%) · neutro %3d (%2.0f%%) · negativo %3d (%2.0f%%)"
           % (sent["positivo"], sent["positivo"] / n * 100,
              sent["neutro"], sent["neutro"] / n * 100,
              sent["negativo"], sent["negativo"] / n * 100))
 
     # Etapa 3
-    escribir_auditoria(comentarios, etiquetas)
+    escribir_auditoria(comentarios, puntuados)
     if args.validar:
         validar(comentarios, etiquetas, motivos, categoria, args.modelo)
 
